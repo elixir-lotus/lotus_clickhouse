@@ -1,0 +1,18 @@
+services:
+  clickhouse:
+    image: clickhouse/clickhouse-server:24.8
+    restart: always
+    container_name: lotus_clickhouse
+    ports:
+      - "9123:8123"
+      - "9100:9000"
+    environment:
+      CLICKHOUSE_DB: lotus_test
+      CLICKHOUSE_USER: default
+      CLICKHOUSE_PASSWORD: clickhouse
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: 1
+    volumes:
+      - clickhouse_data:/var/lib/clickhouse
+
+volumes:
+  clickhouse_data:
