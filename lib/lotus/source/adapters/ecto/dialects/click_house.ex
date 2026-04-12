@@ -291,6 +291,11 @@ defmodule Lotus.Source.Adapters.Ecto.Dialects.ClickHouse do
     |> ch_scalar_type()
   end
 
+  @impl true
+  def editor_config do
+    Lotus.Source.Adapters.Ecto.Dialects.ClickHouse.EditorConfig.config()
+  end
+
   # ---------------------------------------------------------------------------
   # Private: Type Mapping
   # ---------------------------------------------------------------------------

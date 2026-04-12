@@ -218,4 +218,76 @@ defmodule Lotus.ClickHouse.DialectTest do
       assert Dialect.db_type_to_lotus_type("IPv4") == :text
     end
   end
+
+  describe "editor_config/0" do
+    test "returns sql language with all required keys" do
+      config = Dialect.editor_config()
+      required_keys = [:language, :keywords, :types, :functions, :context_boundaries]
+      for key <- required_keys, do: assert(Map.has_key?(config, key), "missing key: #{key}")
+      assert config.language == "sql"
+    end
+
+    test "includes ClickHouse-specific keywords" do
+      config = Dialect.editor_config()
+      keywords = Enum.map(config.keywords, &String.upcase/1)
+      assert "PREWHERE" in keywords
+      assert "FINAL" in keywords
+      assert "SAMPLE" in keywords
+      assert "SETTINGS" in keywords
+      assert "FORMAT" in keywords
+      assert "ENGINE" in keywords
+    end
+
+    test "includes ClickHouse type system" do
+      config = Dialect.editor_config()
+      types = config.types
+      assert "UInt8" in types
+      assert "UInt64" in types
+      assert "Float64" in types
+      assert "Array" in types
+      assert "LowCardinality" in types
+      assert "Nullable" in types
+      assert "DateTime64" in types
+    end
+
+    test "includes comprehensive ClickHouse functions" do
+      config = Dialect.editor_config()
+      names = Enum.map(config.functions, & &1.name)
+      assert "uniq" in names
+      assert "uniqExact" in names
+      assert "groupArray" in names
+      assert "argMax" in names
+      assert "quantile" in names
+      assert "arrayJoin" in names
+      assert "arrayMap" in names
+      assert "arrayFilter" in names
+      assert "toDate" in names
+      assert "toDateTime" in names
+      assert "formatDateTime" in names
+      assert "splitByChar" in names
+      assert "extractAll" in names
+      assert "toUInt32" in names
+      assert "toString" in names
+      assert length(config.functions) >= 100
+    end
+
+    test "functions have required fields" do
+      config = Dialect.editor_config()
+
+      for func <- config.functions do
+        assert is_binary(func.name), "function missing name"
+        assert is_binary(func.detail), "function #{func.name} missing detail"
+        assert is_binary(func.args), "function #{func.name} missing args"
+      end
+    end
+
+    test "includes ClickHouse-specific context boundaries" do
+      config = Dialect.editor_config()
+      assert "prewhere" in config.context_boundaries
+      assert "final" in config.context_boundaries
+      assert "sample" in config.context_boundaries
+      assert "settings" in config.context_boundaries
+      assert "format" in config.context_boundaries
+    end
+  end
 end
