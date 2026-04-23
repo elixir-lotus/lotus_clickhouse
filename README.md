@@ -1,17 +1,17 @@
 # Lotus ClickHouse
 
-[![ci](https://github.com/elixir-lotus/lotus_clickhouse/actions/workflows/ci.yml/badge.svg)](https://github.com/elixir-lotus/lotus_clickhouse/actions/workflows/ci.yml)
-
-ClickHouse adapter for [Lotus](https://github.com/elixir-lotus/lotus/tree/refactor/pluggable-adapters) -- connect your ClickHouse analytics database as a read-only data source in your Lotus-powered Phoenix app.
+**ClickHouse source adapter for [Lotus](https://github.com/elixir-lotus/lotus).** Run Lotus queries, dashboards, and AI-assisted exploration against a ClickHouse cluster the same way you would against Postgres, MySQL, or SQLite.
 
 ## Features
 
 - Full [Lotus source adapter](https://hexdocs.pm/lotus/source-adapters.html) implementation
 - Schema introspection via ClickHouse `system.*` tables
 - Type mapping for all major ClickHouse types (including `Nullable`, `LowCardinality`, `Array` wrappers)
-- Server-enforced read-only mode via ClickHouse `readonly=1` per-query setting
-- Filter, sort, and window pagination support
-- `EXPLAIN` plan generation
+- Server-enforced read-only mode via ClickHouse's `readonly=1` per-query setting
+- Filter, sort, pagination, and variable substitution on the Lotus pipeline
+- `EXPLAIN` plan generation via `query_plan/4`
+- Full `Lotus.AI` integration — generation, optimization, and explanation capabilities with ClickHouse-specific syntax notes (PREWHERE, FINAL, approximate aggregations, column-oriented patterns)
+- 300+ function completions in the query editor via the shipped `EditorConfig`
 
 ## Installation
 
@@ -20,8 +20,8 @@ Add `lotus_clickhouse` to your dependencies in `mix.exs`:
 ```elixir
 def deps do
   [
-    {:lotus, "~> 0.16"},
-    {:lotus_clickhouse, "~> 0.0.1"}
+    {:lotus, "~> 1.0"},
+    {:lotus_clickhouse, "~> 1.0"}
   ]
 end
 ```
@@ -58,7 +58,7 @@ config :my_app, MyApp.ClickHouseRepo,
 ```elixir
 # config/config.exs
 config :lotus,
-  ecto_repo: MyApp.Repo,
+  storage_repo: MyApp.Repo,
   default_source: "postgres",
   source_adapters: [Lotus.Source.Adapters.ClickHouse],
   data_sources: %{

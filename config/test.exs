@@ -17,4 +17,4 @@ config :lotus_clickhouse, Lotus.ClickHouse.Test.LotusRepo,
   pool_size: 1
 
 # Lotus core points at the SQLite repo for metadata storage
-config :lotus, ecto_repo: Lotus.ClickHouse.Test.LotusRepo
+config :lotus, storage_repo: Lotus.ClickHouse.Test.LotusRepo

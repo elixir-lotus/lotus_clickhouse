@@ -1,16 +1,24 @@
 defmodule Lotus.ClickHouse.MixProject do
   use Mix.Project
 
+  @source_url "https://github.com/elixir-lotus/lotus_clickhouse"
+  @version "1.0.0"
+
   def project do
     [
       app: :lotus_clickhouse,
-      version: "0.0.1",
+      name: "Lotus ClickHouse",
+      version: @version,
       elixir: "~> 1.17",
       elixirc_paths: elixirc_paths(Mix.env()),
       start_permanent: Mix.env() == :prod,
       aliases: aliases(),
       deps: deps(),
-      dialyzer: dialyzer()
+      dialyzer: dialyzer(),
+      package: package(),
+      description: description(),
+      source_url: @source_url,
+      homepage_url: @source_url
     ]
   end
 
@@ -29,11 +37,9 @@ defmodule Lotus.ClickHouse.MixProject do
 
   defp deps do
     [
-      {:lotus, github: "elixir-lotus/lotus", branch: "refactor/pluggable-adapters"},
+      {:lotus, github: "elixir-lotus/lotus", branch: "release/v1.0-prep"},
       {:ecto_ch, "~> 0.3"},
       {:ecto_sqlite3, "~> 0.21", only: :test},
-
-      # Development and testing dependencies
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
       {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false}
     ]
@@ -53,5 +59,19 @@ defmodule Lotus.ClickHouse.MixProject do
       flags: [:error_handling, :missing_return, :underspecs],
       ignore_warnings: ".dialyzer_ignore.exs"
     ]
+  end
+
+  defp package do
+    [
+      name: "lotus_clickhouse",
+      maintainers: ["Arda Can Tugay", "Rui Freitas"],
+      licenses: ["MIT"],
+      links: %{GitHub: @source_url},
+      files: ~w[lib .formatter.exs mix.exs README* LICENSE*]
+    ]
+  end
+
+  defp description do
+    "ClickHouse source adapter for Lotus — run Lotus queries, dashboards, and AI-assisted exploration against ClickHouse clusters."
   end
 end

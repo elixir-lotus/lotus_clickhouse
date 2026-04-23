@@ -3,8 +3,10 @@ defmodule Lotus.Source.Adapters.Ecto.Dialects.ClickHouse do
 
   @behaviour Lotus.Source.Adapters.Ecto.Dialect
 
-  alias Lotus.SQL.FilterInjector
-  alias Lotus.SQL.SortInjector
+  alias Lotus.Query.Statement
+  alias Lotus.Source.Adapters.Ecto.Dialects.ClickHouse.EditorConfig
+  alias Lotus.Source.Adapters.Ecto.SQL.FilterInjector
+  alias Lotus.Source.Adapters.Ecto.SQL.SortInjector
 
   @ch_error Module.concat([:Ch, :Error])
 
@@ -94,7 +96,7 @@ defmodule Lotus.Source.Adapters.Ecto.Dialects.ClickHouse do
   end
 
   @impl true
-  def apply_filters(sql, params, filters) do
+  def apply_filters(%Statement{text: sql, params: params} = statement, filters) do
     filter_values = Enum.map(filters, & &1.value)
     all_values = params ++ filter_values
 
@@ -103,16 +105,19 @@ defmodule Lotus.Source.Adapters.Ecto.Dialects.ClickHouse do
       "{$#{idx - 1}:#{ch_type_for_value(value)}}"
     end
 
-    FilterInjector.apply(sql, params, filters, &quote_identifier/1, placeholder_fn)
+    {new_sql, new_params} =
+      FilterInjector.apply(sql, params, filters, &quote_identifier/1, placeholder_fn)
+
+    %{statement | text: new_sql, params: new_params}
   end
 
   @impl true
-  def apply_sorts(sql, sorts) do
-    SortInjector.apply(sql, sorts, &quote_identifier/1)
+  def apply_sorts(%Statement{text: sql} = statement, sorts) do
+    %{statement | text: SortInjector.apply(sql, sorts, &quote_identifier/1)}
   end
 
   @impl true
-  def explain_plan(repo, sql, _params, _opts) do
+  def query_plan(repo, sql, _params, _opts) do
     case repo.query("EXPLAIN #{sql}", []) do
       {:ok, %{rows: rows}} ->
         text = rows |> Enum.map_join("\n", fn [line] -> line end)
@@ -213,7 +218,7 @@ defmodule Lotus.Source.Adapters.Ecto.Dialects.ClickHouse do
   end
 
   @impl true
-  def get_table_schema(repo, schema, table) do
+  def describe_table(repo, schema, table) do
     sql = """
     SELECT
       name,
@@ -240,7 +245,7 @@ defmodule Lotus.Source.Adapters.Ecto.Dialects.ClickHouse do
   end
 
   @impl true
-  def resolve_table_schema(repo, table, schemas) do
+  def resolve_table_namespace(repo, table, schemas) do
     placeholders =
       schemas
       |> Enum.with_index(1)
@@ -282,7 +287,71 @@ defmodule Lotus.Source.Adapters.Ecto.Dialects.ClickHouse do
   end
 
   @impl true
-  def transform_sql(sql), do: sql
+  def transform_statement(%Statement{} = statement), do: statement
+
+  @impl true
+  def needs_preflight?(%Statement{text: sql}) when is_binary(sql) do
+    trimmed = sql |> String.trim_leading() |> String.upcase()
+    not String.starts_with?(trimmed, ["EXPLAIN", "SHOW", "DESCRIBE", "DESC "])
+  end
+
+  def needs_preflight?(_), do: true
+
+  @impl true
+  def ai_context do
+    {:ok,
+     %{
+       language: query_language(),
+       example_query:
+         "SELECT user_id, count() AS events FROM events WHERE event_date >= today() - 7 GROUP BY user_id ORDER BY events DESC LIMIT 100",
+       syntax_notes: clickhouse_syntax_notes(),
+       error_patterns: [
+         %{
+           pattern: ~r/Code:\s*60/,
+           hint: "Table not found. Check the database.table name via list_tables()."
+         },
+         %{
+           pattern: ~r/Code:\s*47/,
+           hint: "Column not found. Check the column name via describe_table()."
+         },
+         %{
+           pattern: ~r/Code:\s*62/,
+           hint:
+             "Query syntax error. Check the ClickHouse SQL grammar — some constructs differ from standard SQL."
+         },
+         %{
+           pattern: ~r/Code:\s*164|READONLY/,
+           hint:
+             "Write attempted on a read-only query. Lotus enforces readonly=1 — only SELECT/EXPLAIN/SHOW/DESCRIBE are allowed."
+         },
+         %{
+           pattern: ~r/Memory limit.*exceeded/i,
+           hint:
+             "Query exceeded memory limit. Try narrowing the WHERE clause, adding PREWHERE, or using approximate functions (uniq instead of count(DISTINCT))."
+         }
+       ],
+       capabilities: %{
+         generation: true,
+         optimization: true,
+         explanation: true
+       }
+     }}
+  end
+
+  defp clickhouse_syntax_notes do
+    """
+    ClickHouse SQL is column-oriented and optimized for analytics. \
+    Use double-quoted identifiers for tables and columns. \
+    Prefer `PREWHERE` over `WHERE` when filtering on columns that prune partitions early. \
+    Avoid `SELECT *` on wide tables — name columns explicitly. \
+    Dates: `today()`, `now()`, `toDate()`, `toStartOfDay()`, `dateDiff()`. \
+    Arrays: `arrayJoin(array)` unpacks to rows, `groupArray()` aggregates. \
+    Approximate functions (`uniq`, `uniqExact`, `quantile`) are much cheaper than exact equivalents for large datasets. \
+    ClickHouse has no transactions; `readonly=1` setting is enforced per-query automatically. \
+    `FINAL` forces deduplication on `ReplacingMergeTree`/`CollapsingMergeTree` — use sparingly, it's expensive. \
+    Use `SETTINGS` clause for per-query tuning (e.g. `SETTINGS max_execution_time=30`).\
+    """
+  end
 
   @impl true
   def db_type_to_lotus_type(db_type) when is_binary(db_type) do
@@ -292,9 +361,7 @@ defmodule Lotus.Source.Adapters.Ecto.Dialects.ClickHouse do
   end
 
   @impl true
-  def editor_config do
-    Lotus.Source.Adapters.Ecto.Dialects.ClickHouse.EditorConfig.config()
-  end
+  def editor_config, do: EditorConfig.config()
 
   # ---------------------------------------------------------------------------
   # Private: Type Mapping

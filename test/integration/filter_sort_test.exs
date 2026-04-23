@@ -2,6 +2,8 @@ defmodule Lotus.ClickHouse.Integration.FilterSortTest do
   use Lotus.ClickHouse.Case, async: false
 
   alias Lotus.ClickHouse.Test.Fixtures
+  alias Lotus.Query.Statement
+  alias Lotus.Source.Adapter, as: AdapterStruct
   alias Lotus.Source.Adapters.ClickHouse, as: Adapter
   alias Lotus.Source.Adapters.Ecto.Dialects.ClickHouse, as: Dialect
 
@@ -20,17 +22,20 @@ defmodule Lotus.ClickHouse.Integration.FilterSortTest do
   # So the original query must SELECT all columns that filters reference.
   # In practice, Lotus users write `SELECT *` or include filter columns.
 
-  describe "apply_filters/3 with real data" do
+  defp stmt(sql, params \\ []),
+    do: %Statement{adapter: Adapter, text: sql, params: params}
+
+  describe "apply_filters/2 with real data" do
     test "filters by equality" do
       base_sql = "SELECT * FROM test_users WHERE email LIKE '%@sort.com' ORDER BY name"
 
-      {filtered_sql, filtered_params} =
-        Dialect.apply_filters(base_sql, [], [
+      filtered =
+        Dialect.apply_filters(stmt(base_sql), [
           %Lotus.Query.Filter{column: "active", op: :eq, value: 1}
         ])
 
       assert {:ok, result} =
-               Adapter.execute_query(Repo, filtered_sql, filtered_params, [])
+               Adapter.execute_query(Repo, filtered.text, filtered.params, [])
 
       names = Enum.map(result.rows, fn row -> Enum.at(row, 1) end)
       assert "Alice" in names
@@ -43,13 +48,13 @@ defmodule Lotus.ClickHouse.Integration.FilterSortTest do
     test "filters by greater than" do
       base_sql = "SELECT * FROM test_users WHERE email LIKE '%@sort.com' ORDER BY name"
 
-      {filtered_sql, filtered_params} =
-        Dialect.apply_filters(base_sql, [], [
+      filtered =
+        Dialect.apply_filters(stmt(base_sql), [
           %Lotus.Query.Filter{column: "age", op: :gt, value: 30}
         ])
 
       assert {:ok, result} =
-               Adapter.execute_query(Repo, filtered_sql, filtered_params, [])
+               Adapter.execute_query(Repo, filtered.text, filtered.params, [])
 
       names = Enum.map(result.rows, fn row -> Enum.at(row, 1) end)
       assert "Charlie" in names
@@ -61,13 +66,13 @@ defmodule Lotus.ClickHouse.Integration.FilterSortTest do
     test "filters by string LIKE" do
       base_sql = "SELECT * FROM test_users WHERE email LIKE '%@sort.com' ORDER BY name"
 
-      {filtered_sql, filtered_params} =
-        Dialect.apply_filters(base_sql, [], [
+      filtered =
+        Dialect.apply_filters(stmt(base_sql), [
           %Lotus.Query.Filter{column: "name", op: :like, value: "%li%"}
         ])
 
       assert {:ok, result} =
-               Adapter.execute_query(Repo, filtered_sql, filtered_params, [])
+               Adapter.execute_query(Repo, filtered.text, filtered.params, [])
 
       names = Enum.map(result.rows, fn row -> Enum.at(row, 1) end)
       assert "Alice" in names
@@ -78,14 +83,14 @@ defmodule Lotus.ClickHouse.Integration.FilterSortTest do
     test "multiple filters combined with AND" do
       base_sql = "SELECT * FROM test_users WHERE email LIKE '%@sort.com' ORDER BY name"
 
-      {filtered_sql, filtered_params} =
-        Dialect.apply_filters(base_sql, [], [
+      filtered =
+        Dialect.apply_filters(stmt(base_sql), [
           %Lotus.Query.Filter{column: "active", op: :eq, value: 1},
           %Lotus.Query.Filter{column: "age", op: :gte, value: 28}
         ])
 
       assert {:ok, result} =
-               Adapter.execute_query(Repo, filtered_sql, filtered_params, [])
+               Adapter.execute_query(Repo, filtered.text, filtered.params, [])
 
       names = Enum.map(result.rows, fn row -> Enum.at(row, 1) end)
       assert "Alice" in names
@@ -99,12 +104,12 @@ defmodule Lotus.ClickHouse.Integration.FilterSortTest do
     test "sorts ascending by name" do
       base_sql = "SELECT name FROM test_users WHERE email LIKE '%@sort.com'"
 
-      sorted_sql =
-        Dialect.apply_sorts(base_sql, [
+      sorted =
+        Dialect.apply_sorts(stmt(base_sql), [
           %Lotus.Query.Sort{column: "name", direction: :asc}
         ])
 
-      assert {:ok, result} = Adapter.execute_query(Repo, sorted_sql, [], [])
+      assert {:ok, result} = Adapter.execute_query(Repo, sorted.text, sorted.params, [])
 
       names = Enum.map(result.rows, fn [name] -> name end)
       assert names == ["Alice", "Bob", "Charlie", "Diana", "Eve"]
@@ -113,44 +118,34 @@ defmodule Lotus.ClickHouse.Integration.FilterSortTest do
     test "sorts descending by age" do
       base_sql = "SELECT name, age FROM test_users WHERE email LIKE '%@sort.com'"
 
-      sorted_sql =
-        Dialect.apply_sorts(base_sql, [
+      sorted =
+        Dialect.apply_sorts(stmt(base_sql), [
           %Lotus.Query.Sort{column: "age", direction: :desc}
         ])
 
-      assert {:ok, result} = Adapter.execute_query(Repo, sorted_sql, [], [])
+      assert {:ok, result} = Adapter.execute_query(Repo, sorted.text, sorted.params, [])
 
       ages = Enum.map(result.rows, fn [_name, age] -> age end)
       assert ages == [35, 32, 30, 28, 25]
     end
   end
 
-  describe "filters + sorts + window combined" do
+  describe "filters + sorts + pagination combined" do
     test "full pipeline: filter, sort, then paginate" do
       base_sql = "SELECT * FROM test_users WHERE email LIKE '%@sort.com'"
 
-      # 1. Apply filter
-      {filtered_sql, filtered_params} =
-        Dialect.apply_filters(base_sql, [], [
+      paged =
+        stmt(base_sql)
+        |> Dialect.apply_filters([
           %Lotus.Query.Filter{column: "active", op: :eq, value: 1}
         ])
-
-      # 2. Apply sort
-      sorted_sql =
-        Dialect.apply_sorts(filtered_sql, [
+        |> Dialect.apply_sorts([
           %Lotus.Query.Sort{column: "age", direction: :asc}
         ])
-
-      # 3. Apply window (paginate)
-      {paged_sql, paged_params, _meta} =
-        Adapter.apply_window(Repo, sorted_sql, filtered_params,
-          limit: 2,
-          offset: 0,
-          count: :none
-        )
+        |> then(&AdapterStruct.apply_pagination(adapter_struct(), &1, limit: 2, offset: 0))
 
       assert {:ok, result} =
-               Adapter.execute_query(Repo, paged_sql, paged_params, [])
+               Adapter.execute_query(Repo, paged.text, paged.params, [])
 
       assert result.num_rows == 2
 
@@ -162,5 +157,14 @@ defmodule Lotus.ClickHouse.Integration.FilterSortTest do
       rows = Enum.map(result.rows, fn row -> {Enum.at(row, name_idx), Enum.at(row, age_idx)} end)
       assert rows == [{"Bob", 25}, {"Diana", 28}]
     end
+  end
+
+  defp adapter_struct do
+    %AdapterStruct{
+      name: "ch_test",
+      module: Adapter,
+      state: Repo,
+      source_type: :clickhouse
+    }
   end
 end

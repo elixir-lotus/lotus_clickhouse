@@ -2,7 +2,10 @@ defmodule Lotus.ClickHouse.Integration.QueryExecutionTest do
   use Lotus.ClickHouse.Case, async: false
 
   alias Lotus.ClickHouse.Test.Fixtures
+  alias Lotus.Query.Statement
   alias Lotus.Source.Adapters.ClickHouse, as: Adapter
+
+  defp stmt(sql), do: %Statement{adapter: Adapter, text: sql, params: []}
 
   describe "simple query execution" do
     test "returns columns, rows, num_rows" do
@@ -296,9 +299,9 @@ defmodule Lotus.ClickHouse.Integration.QueryExecutionTest do
     end
   end
 
-  describe "explain_plan/4" do
+  describe "query_plan/4" do
     test "returns explain output for simple query" do
-      assert {:ok, plan} = Adapter.explain_plan(Repo, "SELECT 1", [], [])
+      assert {:ok, plan} = Adapter.query_plan(Repo, "SELECT 1", [], [])
       assert is_binary(plan)
       assert plan != ""
     end
@@ -307,7 +310,7 @@ defmodule Lotus.ClickHouse.Integration.QueryExecutionTest do
       Fixtures.insert_user(%{name: "Explain", email: "explain@test.com"})
 
       assert {:ok, plan} =
-               Adapter.explain_plan(Repo, "SELECT * FROM test_users WHERE active = 1", [], [])
+               Adapter.query_plan(Repo, "SELECT * FROM test_users WHERE active = 1", [], [])
 
       assert is_binary(plan)
     end
@@ -315,7 +318,7 @@ defmodule Lotus.ClickHouse.Integration.QueryExecutionTest do
 
   describe "sanitize_query/3" do
     test "allows SELECT" do
-      assert :ok = Adapter.sanitize_query(Repo, "SELECT 1", [])
+      assert :ok = Adapter.sanitize_query(Repo, stmt("SELECT 1"), [])
     end
 
     test "allows complex SELECT" do
@@ -327,23 +330,24 @@ defmodule Lotus.ClickHouse.Integration.QueryExecutionTest do
       LIMIT 10
       """
 
-      assert :ok = Adapter.sanitize_query(Repo, sql, [])
+      assert :ok = Adapter.sanitize_query(Repo, stmt(sql), [])
     end
 
     test "blocks INSERT by default" do
-      assert {:error, _} = Adapter.sanitize_query(Repo, "INSERT INTO t VALUES (1)", [])
+      assert {:error, _} = Adapter.sanitize_query(Repo, stmt("INSERT INTO t VALUES (1)"), [])
     end
 
     test "blocks DELETE by default" do
-      assert {:error, _} = Adapter.sanitize_query(Repo, "DELETE FROM test_users", [])
+      assert {:error, _} = Adapter.sanitize_query(Repo, stmt("DELETE FROM test_users"), [])
     end
 
     test "blocks multi-statement" do
-      assert {:error, _} = Adapter.sanitize_query(Repo, "SELECT 1; DROP TABLE t", [])
+      assert {:error, _} = Adapter.sanitize_query(Repo, stmt("SELECT 1; DROP TABLE t"), [])
     end
 
     test "allows DML when read_only: false" do
-      assert :ok = Adapter.sanitize_query(Repo, "INSERT INTO t VALUES (1)", read_only: false)
+      assert :ok =
+               Adapter.sanitize_query(Repo, stmt("INSERT INTO t VALUES (1)"), read_only: false)
     end
   end
 
