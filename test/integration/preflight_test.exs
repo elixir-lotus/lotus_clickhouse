@@ -134,6 +134,45 @@ defmodule Lotus.ClickHouse.Integration.PreflightTest do
     end
   end
 
+  describe "extract_accessed_resources/2 — alias resolution" do
+    defp extract(sql) do
+      {:ok, set} = Dialect.extract_accessed_resources(Repo, stmt(sql))
+      MapSet.to_list(set) |> Enum.sort()
+    end
+
+    test "unqualified table returns default db + real name" do
+      db = Repo.config()[:database]
+      assert [{^db, "test_users"}] = extract("SELECT * FROM test_users")
+    end
+
+    test "aliased table resolves back to the real name (not the alias)" do
+      db = Repo.config()[:database]
+      result = extract("SELECT u.name FROM test_users AS u")
+      assert [{^db, "test_users"}] = result
+    end
+
+    test "JOIN with aliases returns both real table names" do
+      db = Repo.config()[:database]
+
+      result =
+        extract("""
+        SELECT u.name, p.title
+        FROM test_users AS u
+        INNER JOIN test_posts AS p ON u.id = p.user_id
+        """)
+
+      assert {db, "test_users"} in result
+      assert {db, "test_posts"} in result
+      refute Enum.any?(result, fn {_, t} -> t in ["u", "p"] end)
+    end
+
+    test "implicit alias (no AS keyword) also resolves" do
+      db = Repo.config()[:database]
+      result = extract("SELECT u.name FROM test_users u")
+      assert [{^db, "test_users"}] = result
+    end
+  end
+
   describe "ClickHouse adapter dispatch — features" do
     test "supports arrays" do
       assert AdapterBehaviour.supports_feature?(@ch_adapter, :arrays)

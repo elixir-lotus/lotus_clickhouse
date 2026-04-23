@@ -1,6 +1,7 @@
 defmodule Lotus.ClickHouse.DialectTest do
   use ExUnit.Case, async: true
 
+  alias Lotus.Query.Statement
   alias Lotus.Source.Adapters.Ecto.Dialects.ClickHouse, as: Dialect
 
   describe "source identity" do
@@ -58,13 +59,20 @@ defmodule Lotus.ClickHouse.DialectTest do
   end
 
   describe "execute_in_transaction/3" do
-    test "executes callback directly (no transaction)" do
-      assert {:ok, 42} = Dialect.execute_in_transaction(nil, fn -> 42 end, [])
+    @describetag :integration
+
+    test "executes callback and returns its result" do
+      assert {:ok, 42} =
+               Dialect.execute_in_transaction(Lotus.ClickHouse.Test.Repo, fn -> 42 end, [])
     end
 
     test "returns error tuple on exception" do
       assert {:error, _} =
-               Dialect.execute_in_transaction(nil, fn -> raise "boom" end, [])
+               Dialect.execute_in_transaction(
+                 Lotus.ClickHouse.Test.Repo,
+                 fn -> raise "boom" end,
+                 []
+               )
     end
   end
 
@@ -216,6 +224,42 @@ defmodule Lotus.ClickHouse.DialectTest do
     test "unknown type defaults to :text" do
       assert Dialect.db_type_to_lotus_type("IntervalDay") == :text
       assert Dialect.db_type_to_lotus_type("IPv4") == :text
+    end
+  end
+
+  describe "transform_statement/1" do
+    defp t(sql) do
+      Dialect.transform_statement(%Statement{text: sql, params: []}).text
+    end
+
+    test "rewrites '%{{var}}%' into pipe concatenation" do
+      assert t("SELECT * FROM users WHERE name LIKE '%{{q}}%'") ==
+               "SELECT * FROM users WHERE name LIKE '%' || {{q}} || '%'"
+    end
+
+    test "rewrites '{{var}}%' (right wildcard)" do
+      assert t("SELECT * FROM users WHERE name LIKE '{{q}}%'") ==
+               "SELECT * FROM users WHERE name LIKE {{q}} || '%'"
+    end
+
+    test "rewrites '%{{var}}' (left wildcard)" do
+      assert t("SELECT * FROM users WHERE name LIKE '%{{q}}'") ==
+               "SELECT * FROM users WHERE name LIKE '%' || {{q}}"
+    end
+
+    test "strips single-quote wrapper around bare variable" do
+      assert t("SELECT * FROM users WHERE email = '{{email}}'") ==
+               "SELECT * FROM users WHERE email = {{email}}"
+    end
+
+    test "leaves plain string literals unchanged" do
+      sql = "SELECT * FROM users WHERE email = 'user@example.com'"
+      assert t(sql) == sql
+    end
+
+    test "leaves SQL with no templates unchanged" do
+      sql = "SELECT 1 AS num"
+      assert t(sql) == sql
     end
   end
 

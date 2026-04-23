@@ -4,9 +4,11 @@ defmodule Lotus.Source.Adapters.Ecto.Dialects.ClickHouse do
   @behaviour Lotus.Source.Adapters.Ecto.Dialect
 
   alias Lotus.Query.Statement
+  alias Lotus.Source.Adapters.Ecto, as: EctoAdapter
   alias Lotus.Source.Adapters.Ecto.Dialects.ClickHouse.EditorConfig
   alias Lotus.Source.Adapters.Ecto.SQL.FilterInjector
   alias Lotus.Source.Adapters.Ecto.SQL.SortInjector
+  alias Lotus.Source.Adapters.Ecto.SQL.Transformer
 
   @ch_error Module.concat([:Ch, :Error])
 
@@ -33,8 +35,9 @@ defmodule Lotus.Source.Adapters.Ecto.Dialects.ClickHouse do
   # ---------------------------------------------------------------------------
 
   @impl true
-  def execute_in_transaction(_repo, fun, _opts) do
-    {:ok, fun.()}
+  def execute_in_transaction(repo, fun, opts) do
+    timeout = Keyword.get(opts, :timeout, 15_000)
+    {:ok, repo.checkout(fun, timeout: timeout)}
   rescue
     e -> {:error, Exception.message(e)}
   end
@@ -117,10 +120,10 @@ defmodule Lotus.Source.Adapters.Ecto.Dialects.ClickHouse do
   end
 
   @impl true
-  def query_plan(repo, sql, _params, _opts) do
-    case repo.query("EXPLAIN #{sql}", []) do
+  def query_plan(repo, sql, params, _opts) do
+    case repo.query("EXPLAIN " <> sql, params, settings: [readonly: 1]) do
       {:ok, %{rows: rows}} ->
-        text = rows |> Enum.map_join("\n", fn [line] -> line end)
+        text = Enum.map_join(rows, "\n", fn [line] -> line end)
         {:ok, text}
 
       {:error, err} ->
@@ -175,6 +178,68 @@ defmodule Lotus.Source.Adapters.Ecto.Dialects.ClickHouse do
   def default_schemas(repo) do
     database = repo.config()[:database] || "default"
     [database]
+  end
+
+  @impl true
+  def extract_accessed_resources(repo, %Statement{text: sql, params: params}) do
+    default_db = repo.config()[:database] || "default"
+    alias_map = EctoAdapter.parse_alias_map(sql)
+    explain_sql = "EXPLAIN AST " <> sql
+
+    relations =
+      case repo.query(explain_sql, params, settings: [readonly: 1]) do
+        {:ok, %{rows: rows}} ->
+          extract_tables_from_ast(rows, default_db, alias_map)
+
+        {:error, _err} ->
+          extract_tables_from_sql_fallback(sql, default_db, alias_map)
+      end
+
+    {:ok, relations}
+  rescue
+    _ ->
+      {:ok,
+       extract_tables_from_sql_fallback(sql, default_db(repo), EctoAdapter.parse_alias_map(sql))}
+  end
+
+  defp default_db(repo), do: repo.config()[:database] || "default"
+
+  defp extract_tables_from_ast(rows, default_db, alias_map) do
+    table_identifier =
+      ~r/TableIdentifier\s+(?:([a-zA-Z_][a-zA-Z0-9_]*)\.)?([a-zA-Z_][a-zA-Z0-9_]*)/
+
+    rows
+    |> Enum.flat_map(fn [line] -> Regex.scan(table_identifier, line) end)
+    |> Enum.map(fn
+      [_, "", table] -> {default_db, resolve_table(table, alias_map)}
+      [_, schema, table] -> {EctoAdapter.normalize_ident(schema), resolve_table(table, alias_map)}
+    end)
+    |> MapSet.new()
+  end
+
+  defp extract_tables_from_sql_fallback(sql, default_db, alias_map) do
+    table_regex =
+      ~r/(?:FROM|JOIN)\s+(?:([`"]?)([a-zA-Z_][a-zA-Z0-9_]*)\1\.)?([`"]?)([a-zA-Z_][a-zA-Z0-9_]*)\3(?:\s+(?:AS\s+)?[a-zA-Z_][a-zA-Z0-9_]*)?/i
+
+    Regex.scan(table_regex, sql)
+    |> Enum.map(fn
+      [_, _, schema, _, table] when schema != "" ->
+        {EctoAdapter.normalize_ident(schema), resolve_table(table, alias_map)}
+
+      [_, _, "", _, table] ->
+        {default_db, resolve_table(table, alias_map)}
+
+      _ ->
+        nil
+    end)
+    |> Enum.reject(&is_nil/1)
+    |> MapSet.new()
+  end
+
+  defp resolve_table(table, alias_map) do
+    table
+    |> EctoAdapter.normalize_ident()
+    |> EctoAdapter.resolve_alias(alias_map)
   end
 
   # ---------------------------------------------------------------------------
@@ -287,7 +352,14 @@ defmodule Lotus.Source.Adapters.Ecto.Dialects.ClickHouse do
   end
 
   @impl true
-  def transform_statement(%Statement{} = statement), do: statement
+  def transform_statement(%Statement{text: sql} = statement) do
+    new_sql =
+      sql
+      |> Transformer.transform_wildcards(:pipe)
+      |> Transformer.strip_quoted_variables()
+
+    %{statement | text: new_sql}
+  end
 
   @impl true
   def needs_preflight?(%Statement{text: sql}) when is_binary(sql) do

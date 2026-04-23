@@ -314,6 +314,21 @@ defmodule Lotus.ClickHouse.Integration.QueryExecutionTest do
 
       assert is_binary(plan)
     end
+
+    test "threads params through to EXPLAIN" do
+      Fixtures.insert_user(%{name: "Explain2", email: "explain2@test.com"})
+
+      assert {:ok, plan} =
+               Adapter.query_plan(
+                 Repo,
+                 "SELECT name FROM test_users WHERE id = {$0:UInt64}",
+                 [1],
+                 []
+               )
+
+      assert is_binary(plan)
+      assert plan != ""
+    end
   end
 
   describe "sanitize_query/3" do
