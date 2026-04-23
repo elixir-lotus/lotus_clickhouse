@@ -56,10 +56,10 @@ defmodule Lotus.ClickHouse.Integration.IntrospectionTest do
     end
   end
 
-  describe "get_table_schema/3" do
+  describe "describe_table/3" do
     test "returns column metadata for test_users" do
       db = test_database()
-      {:ok, columns} = Adapter.get_table_schema(Repo, db, "test_users")
+      {:ok, columns} = Adapter.describe_table(Repo, db, "test_users")
 
       assert is_list(columns)
       refute Enum.empty?(columns)
@@ -77,7 +77,7 @@ defmodule Lotus.ClickHouse.Integration.IntrospectionTest do
 
     test "returns correct types" do
       db = test_database()
-      {:ok, columns} = Adapter.get_table_schema(Repo, db, "test_users")
+      {:ok, columns} = Adapter.describe_table(Repo, db, "test_users")
 
       by_name = Map.new(columns, &{&1.name, &1})
 
@@ -90,7 +90,7 @@ defmodule Lotus.ClickHouse.Integration.IntrospectionTest do
 
     test "detects nullable columns" do
       db = test_database()
-      {:ok, columns} = Adapter.get_table_schema(Repo, db, "test_users")
+      {:ok, columns} = Adapter.describe_table(Repo, db, "test_users")
 
       by_name = Map.new(columns, &{&1.name, &1})
 
@@ -101,7 +101,7 @@ defmodule Lotus.ClickHouse.Integration.IntrospectionTest do
 
     test "identifies primary key columns" do
       db = test_database()
-      {:ok, columns} = Adapter.get_table_schema(Repo, db, "test_users")
+      {:ok, columns} = Adapter.describe_table(Repo, db, "test_users")
 
       pk_names = columns |> Enum.filter(& &1.primary_key) |> Enum.map(& &1.name)
       assert "id" in pk_names
@@ -109,7 +109,7 @@ defmodule Lotus.ClickHouse.Integration.IntrospectionTest do
 
     test "returns column metadata for test_posts with array type" do
       db = test_database()
-      {:ok, columns} = Adapter.get_table_schema(Repo, db, "test_posts")
+      {:ok, columns} = Adapter.describe_table(Repo, db, "test_posts")
 
       by_name = Map.new(columns, &{&1.name, &1})
 
@@ -121,7 +121,7 @@ defmodule Lotus.ClickHouse.Integration.IntrospectionTest do
 
     test "returns columns for test_events with composite ORDER BY" do
       db = test_database()
-      {:ok, columns} = Adapter.get_table_schema(Repo, db, "test_events")
+      {:ok, columns} = Adapter.describe_table(Repo, db, "test_events")
 
       names = Enum.map(columns, & &1.name)
       assert "event_name" in names
@@ -131,22 +131,22 @@ defmodule Lotus.ClickHouse.Integration.IntrospectionTest do
     end
   end
 
-  describe "resolve_table_schema/3" do
+  describe "resolve_table_namespace/3" do
     test "resolves existing table to its database" do
       db = test_database()
-      {:ok, schema} = Adapter.resolve_table_schema(Repo, "test_users", [db])
+      {:ok, schema} = Adapter.resolve_table_namespace(Repo, "test_users", [db])
       assert schema == db
     end
 
     test "resolves from multiple candidate databases" do
       db = test_database()
-      {:ok, schema} = Adapter.resolve_table_schema(Repo, "test_users", ["default", db])
+      {:ok, schema} = Adapter.resolve_table_namespace(Repo, "test_users", ["default", db])
       assert schema == db
     end
 
     test "returns nil for non-existent table" do
       db = test_database()
-      {:ok, schema} = Adapter.resolve_table_schema(Repo, "nonexistent_xyz_table", [db])
+      {:ok, schema} = Adapter.resolve_table_namespace(Repo, "nonexistent_xyz_table", [db])
       assert is_nil(schema)
     end
   end

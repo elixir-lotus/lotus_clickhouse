@@ -2,8 +2,12 @@ defmodule Lotus.ClickHouse.Integration.PreflightTest do
   use ExUnit.Case, async: false
 
   alias Lotus.ClickHouse.Test.Repo
+  alias Lotus.Query.Statement
   alias Lotus.Source.Adapter, as: AdapterBehaviour
   alias Lotus.Source.Adapters.ClickHouse, as: Adapter
+  alias Lotus.Source.Adapters.Ecto.Dialects.ClickHouse, as: Dialect
+
+  defp stmt(sql), do: %Statement{adapter: Adapter, text: sql, params: []}
 
   @ch_adapter Adapter.wrap("clickhouse", Repo)
 
@@ -61,18 +65,18 @@ defmodule Lotus.ClickHouse.Integration.PreflightTest do
       assert "test_users" in table_names
     end
 
-    test "get_table_schema returns real column metadata" do
+    test "describe_table returns real column metadata" do
       db = Repo.config()[:database]
-      {:ok, columns} = AdapterBehaviour.get_table_schema(@ch_adapter, db, "test_users")
+      {:ok, columns} = AdapterBehaviour.describe_table(@ch_adapter, db, "test_users")
       assert is_list(columns)
       names = Enum.map(columns, & &1.name)
       assert "id" in names
       assert "name" in names
     end
 
-    test "resolve_table_schema finds table in database" do
+    test "resolve_table_namespace finds table in database" do
       db = Repo.config()[:database]
-      {:ok, schema} = AdapterBehaviour.resolve_table_schema(@ch_adapter, "test_users", [db])
+      {:ok, schema} = AdapterBehaviour.resolve_table_namespace(@ch_adapter, "test_users", [db])
       assert schema == db
     end
   end
@@ -82,13 +86,16 @@ defmodule Lotus.ClickHouse.Integration.PreflightTest do
       assert AdapterBehaviour.quote_identifier(@ch_adapter, "users") == ~s("users")
     end
 
-    test "param_placeholder" do
-      assert AdapterBehaviour.param_placeholder(@ch_adapter, 1, "x", :text) == "{$0:String}"
-      assert AdapterBehaviour.param_placeholder(@ch_adapter, 2, "y", :integer) == "{$1:Int64}"
+    # `param_placeholder/3` and `limit_offset_placeholders/2` are Ecto-dialect
+    # internals in v1 (not on the universal Adapter behaviour). Tested directly
+    # on the Dialect module.
+    test "param_placeholder (via Dialect)" do
+      assert Dialect.param_placeholder(1, "x", :text) == "{$0:String}"
+      assert Dialect.param_placeholder(2, "y", :integer) == "{$1:Int64}"
     end
 
-    test "limit_offset_placeholders" do
-      {limit_ph, offset_ph} = AdapterBehaviour.limit_offset_placeholders(@ch_adapter, 1, 2)
+    test "limit_offset_placeholders (via Dialect)" do
+      {limit_ph, offset_ph} = Dialect.limit_offset_placeholders(1, 2)
       assert limit_ph == "{$0:UInt64}"
       assert offset_ph == "{$1:UInt64}"
     end
@@ -108,11 +115,12 @@ defmodule Lotus.ClickHouse.Integration.PreflightTest do
 
     test "sanitize_query blocks DML" do
       assert {:error, _} =
-               AdapterBehaviour.sanitize_query(@ch_adapter, "DROP TABLE test_users", [])
+               AdapterBehaviour.sanitize_query(@ch_adapter, stmt("DROP TABLE test_users"), [])
     end
 
     test "sanitize_query allows SELECT" do
-      assert :ok = AdapterBehaviour.sanitize_query(@ch_adapter, "SELECT * FROM test_users", [])
+      assert :ok =
+               AdapterBehaviour.sanitize_query(@ch_adapter, stmt("SELECT * FROM test_users"), [])
     end
   end
 
