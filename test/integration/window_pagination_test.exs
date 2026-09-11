@@ -17,7 +17,7 @@ defmodule Lotus.ClickHouse.Integration.WindowPaginationTest do
   end
 
   defp stmt(sql),
-    do: %Statement{adapter: Adapter, text: sql, params: []}
+    do: %Statement{adapter: Adapter, body: sql, params: []}
 
   defp adapter_struct do
     %AdapterStruct{
@@ -39,10 +39,10 @@ defmodule Lotus.ClickHouse.Integration.WindowPaginationTest do
       paged =
         AdapterStruct.apply_pagination(adapter_struct(), stmt(base_sql), limit: 2, offset: 0)
 
-      assert paged.text =~ "LIMIT"
-      assert paged.text =~ "OFFSET"
+      assert paged.body =~ "LIMIT"
+      assert paged.body =~ "OFFSET"
 
-      assert {:ok, result} = Adapter.execute_query(Repo, paged.text, paged.params, [])
+      assert {:ok, result} = Adapter.execute_query(Repo, paged.body, paged.params, [])
 
       assert result.num_rows == 2
       assert [["Window A"], ["Window B"]] = result.rows
@@ -58,7 +58,7 @@ defmodule Lotus.ClickHouse.Integration.WindowPaginationTest do
       paged =
         AdapterStruct.apply_pagination(adapter_struct(), stmt(base_sql), limit: 2, offset: 2)
 
-      assert {:ok, result} = Adapter.execute_query(Repo, paged.text, paged.params, [])
+      assert {:ok, result} = Adapter.execute_query(Repo, paged.body, paged.params, [])
 
       assert result.num_rows == 2
       assert [["Window C"], ["Window D"]] = result.rows
@@ -74,7 +74,7 @@ defmodule Lotus.ClickHouse.Integration.WindowPaginationTest do
       paged =
         AdapterStruct.apply_pagination(adapter_struct(), stmt(base_sql), limit: 2, offset: 4)
 
-      assert {:ok, result} = Adapter.execute_query(Repo, paged.text, paged.params, [])
+      assert {:ok, result} = Adapter.execute_query(Repo, paged.body, paged.params, [])
 
       assert result.num_rows == 1
       assert [["Window E"]] = result.rows
