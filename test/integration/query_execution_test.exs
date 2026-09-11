@@ -5,7 +5,7 @@ defmodule Lotus.ClickHouse.Integration.QueryExecutionTest do
   alias Lotus.Query.Statement
   alias Lotus.Source.Adapters.ClickHouse, as: Adapter
 
-  defp stmt(sql), do: %Statement{adapter: Adapter, text: sql, params: []}
+  defp stmt(sql), do: %Statement{adapter: Adapter, body: sql, params: []}
 
   describe "simple query execution" do
     test "returns columns, rows, num_rows" do
@@ -299,9 +299,9 @@ defmodule Lotus.ClickHouse.Integration.QueryExecutionTest do
     end
   end
 
-  describe "query_plan/4" do
+  describe "query_plan/3" do
     test "returns explain output for simple query" do
-      assert {:ok, plan} = Adapter.query_plan(Repo, "SELECT 1", [], [])
+      assert {:ok, plan} = Adapter.query_plan(Repo, stmt("SELECT 1"), [])
       assert is_binary(plan)
       assert plan != ""
     end
@@ -310,7 +310,7 @@ defmodule Lotus.ClickHouse.Integration.QueryExecutionTest do
       Fixtures.insert_user(%{name: "Explain", email: "explain@test.com"})
 
       assert {:ok, plan} =
-               Adapter.query_plan(Repo, "SELECT * FROM test_users WHERE active = 1", [], [])
+               Adapter.query_plan(Repo, stmt("SELECT * FROM test_users WHERE active = 1"), [])
 
       assert is_binary(plan)
     end
@@ -321,8 +321,11 @@ defmodule Lotus.ClickHouse.Integration.QueryExecutionTest do
       assert {:ok, plan} =
                Adapter.query_plan(
                  Repo,
-                 "SELECT name FROM test_users WHERE id = {$0:UInt64}",
-                 [1],
+                 %Statement{
+                   adapter: Adapter,
+                   body: "SELECT name FROM test_users WHERE id = {$0:UInt64}",
+                   params: [1]
+                 },
                  []
                )
 
@@ -376,11 +379,6 @@ defmodule Lotus.ClickHouse.Integration.QueryExecutionTest do
     test "format_error returns readable string for ClickHouse errors" do
       error = %Ch.Error{code: 62, message: "Syntax error"}
       assert Adapter.format_error(Repo, error) =~ "ClickHouse Error (62)"
-    end
-
-    test "handled_errors includes Ch.Error" do
-      errors = Adapter.handled_errors(Repo)
-      assert Ch.Error in errors
     end
   end
 end

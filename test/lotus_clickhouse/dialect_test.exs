@@ -1,6 +1,8 @@
 defmodule Lotus.ClickHouse.DialectTest do
   use ExUnit.Case, async: true
 
+  import Lotus.ClickHouse.Test.DenyAssertions
+
   alias Lotus.Query.Statement
   alias Lotus.Source.Adapters.Ecto.Dialects.ClickHouse, as: Dialect
 
@@ -53,8 +55,20 @@ defmodule Lotus.ClickHouse.DialectTest do
 
   describe "limit_query/2" do
     test "wraps statement in subquery with LIMIT" do
-      sql = Dialect.limit_query("SELECT * FROM users", 10)
-      assert sql == "SELECT * FROM (SELECT * FROM users) AS t LIMIT 10"
+      statement = %Statement{body: "SELECT * FROM users", params: []}
+
+      assert %Statement{body: body, params: []} = Dialect.limit_query(statement, 10)
+      assert body == "SELECT * FROM (SELECT * FROM users) AS t LIMIT 10"
+    end
+
+    test "preserves params and meta" do
+      statement = %Statement{
+        body: "SELECT * FROM users WHERE id = {$0:UInt64}",
+        params: [1],
+        meta: %{a: 1}
+      }
+
+      assert %Statement{params: [1], meta: %{a: 1}} = Dialect.limit_query(statement, 10)
     end
   end
 
@@ -92,27 +106,17 @@ defmodule Lotus.ClickHouse.DialectTest do
     end
   end
 
-  describe "handled_errors/0" do
-    test "includes Ch.Error" do
-      assert Ch.Error in Dialect.handled_errors()
-    end
-
-    test "includes DBConnection.ConnectionError" do
-      assert DBConnection.ConnectionError in Dialect.handled_errors()
-    end
-  end
-
   describe "builtin_denies/1" do
     setup do
       %{denies: Dialect.builtin_denies(Lotus.ClickHouse.Test.Repo)}
     end
 
     test "denies system schema", %{denies: denies} do
-      assert {"system", ~r/.*/} in denies
+      assert denies_pattern?(denies, "system")
     end
 
     test "denies INFORMATION_SCHEMA", %{denies: denies} do
-      assert {"INFORMATION_SCHEMA", ~r/.*/} in denies
+      assert denies_pattern?(denies, "INFORMATION_SCHEMA")
     end
 
     test "denies lotus internal tables", %{denies: denies} do
@@ -142,6 +146,14 @@ defmodule Lotus.ClickHouse.DialectTest do
     test "supports arrays and json" do
       assert Dialect.supports_feature?(:arrays)
       assert Dialect.supports_feature?(:json)
+    end
+
+    test "supports query-populated dropdown options" do
+      assert Dialect.supports_feature?(:dynamic_options)
+    end
+
+    test "answers false for unknown features" do
+      refute Dialect.supports_feature?(:something_we_never_heard_of)
     end
 
     test "does not support postgres-specific features" do
@@ -229,7 +241,7 @@ defmodule Lotus.ClickHouse.DialectTest do
 
   describe "transform_statement/1" do
     defp t(sql) do
-      Dialect.transform_statement(%Statement{text: sql, params: []}).text
+      Dialect.transform_statement(%Statement{body: sql, params: []}).body
     end
 
     test "rewrites '%{{var}}%' into pipe concatenation" do

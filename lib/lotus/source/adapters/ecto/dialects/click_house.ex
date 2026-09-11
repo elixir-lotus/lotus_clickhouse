@@ -26,8 +26,8 @@ defmodule Lotus.Source.Adapters.Ecto.Dialects.ClickHouse do
   def query_language, do: "sql:clickhouse"
 
   @impl true
-  def limit_query(statement, limit) do
-    "SELECT * FROM (#{statement}) AS t LIMIT #{limit}"
+  def limit_query(%Statement{body: sql} = statement, limit) do
+    %{statement | body: "SELECT * FROM (#{sql}) AS t LIMIT #{limit}"}
   end
 
   # ---------------------------------------------------------------------------
@@ -72,11 +72,6 @@ defmodule Lotus.Source.Adapters.Ecto.Dialects.ClickHouse do
   def format_error(other) when is_binary(other), do: other
   def format_error(other), do: inspect(other)
 
-  @impl true
-  def handled_errors do
-    [@ch_error, DBConnection.ConnectionError]
-  end
-
   # ---------------------------------------------------------------------------
   # SQL Generation
   # ---------------------------------------------------------------------------
@@ -99,7 +94,7 @@ defmodule Lotus.Source.Adapters.Ecto.Dialects.ClickHouse do
   end
 
   @impl true
-  def apply_filters(%Statement{text: sql, params: params} = statement, filters) do
+  def apply_filters(%Statement{body: sql, params: params} = statement, filters) do
     filter_values = Enum.map(filters, & &1.value)
     all_values = params ++ filter_values
 
@@ -111,16 +106,16 @@ defmodule Lotus.Source.Adapters.Ecto.Dialects.ClickHouse do
     {new_sql, new_params} =
       FilterInjector.apply(sql, params, filters, &quote_identifier/1, placeholder_fn)
 
-    %{statement | text: new_sql, params: new_params}
+    %{statement | body: new_sql, params: new_params}
   end
 
   @impl true
-  def apply_sorts(%Statement{text: sql} = statement, sorts) do
-    %{statement | text: SortInjector.apply(sql, sorts, &quote_identifier/1)}
+  def apply_sorts(%Statement{body: sql} = statement, sorts) do
+    %{statement | body: SortInjector.apply(sql, sorts, &quote_identifier/1)}
   end
 
   @impl true
-  def query_plan(repo, sql, params, _opts) do
+  def query_plan(repo, %Statement{body: sql, params: params}, _opts) do
     case repo.query("EXPLAIN " <> sql, params, settings: [readonly: 1]) do
       {:ok, %{rows: rows}} ->
         text = Enum.map_join(rows, "\n", fn [line] -> line end)
@@ -181,7 +176,7 @@ defmodule Lotus.Source.Adapters.Ecto.Dialects.ClickHouse do
   end
 
   @impl true
-  def extract_accessed_resources(repo, %Statement{text: sql, params: params}) do
+  def extract_accessed_resources(repo, %Statement{body: sql, params: params}) do
     default_db = repo.config()[:database] || "default"
     alias_map = EctoAdapter.parse_alias_map(sql)
     explain_sql = "EXPLAIN AST " <> sql
@@ -341,6 +336,7 @@ defmodule Lotus.Source.Adapters.Ecto.Dialects.ClickHouse do
   def supports_feature?(:schema_hierarchy), do: false
   def supports_feature?(:search_path), do: false
   def supports_feature?(:make_interval), do: false
+  def supports_feature?(:dynamic_options), do: true
   def supports_feature?(_), do: false
 
   @impl true
@@ -352,17 +348,17 @@ defmodule Lotus.Source.Adapters.Ecto.Dialects.ClickHouse do
   end
 
   @impl true
-  def transform_statement(%Statement{text: sql} = statement) do
+  def transform_statement(%Statement{body: sql} = statement) do
     new_sql =
       sql
       |> Transformer.transform_wildcards(:pipe)
       |> Transformer.strip_quoted_variables()
 
-    %{statement | text: new_sql}
+    %{statement | body: new_sql}
   end
 
   @impl true
-  def needs_preflight?(%Statement{text: sql}) when is_binary(sql) do
+  def needs_preflight?(%Statement{body: sql}) when is_binary(sql) do
     trimmed = sql |> String.trim_leading() |> String.upcase()
     not String.starts_with?(trimmed, ["EXPLAIN", "SHOW", "DESCRIBE", "DESC "])
   end

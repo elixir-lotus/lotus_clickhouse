@@ -2,6 +2,7 @@ defmodule Lotus.ClickHouse.AdapterTest do
   use ExUnit.Case, async: false
 
   alias Lotus.ClickHouse.Test.Repo
+  alias Lotus.Query.Statement
   alias Lotus.Source.Adapter, as: AdapterStruct
   alias Lotus.Source.Adapters.ClickHouse, as: Adapter
 
@@ -94,8 +95,10 @@ defmodule Lotus.ClickHouse.AdapterTest do
     end
 
     test "limit_query wraps statement" do
-      sql = Adapter.limit_query(Repo, "SELECT * FROM users", 10)
-      assert sql == "SELECT * FROM (SELECT * FROM users) AS t LIMIT 10"
+      statement = %Statement{adapter: Adapter, body: "SELECT * FROM users", params: []}
+
+      assert %Statement{body: body} = Adapter.limit_query(Repo, statement, 10)
+      assert body == "SELECT * FROM (SELECT * FROM users) AS t LIMIT 10"
     end
   end
 end

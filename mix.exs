@@ -9,7 +9,7 @@ defmodule Lotus.ClickHouse.MixProject do
       app: :lotus_clickhouse,
       name: "Lotus ClickHouse",
       version: @version,
-      elixir: "~> 1.17",
+      elixir: "~> 1.18",
       elixirc_paths: elixirc_paths(Mix.env()),
       start_permanent: Mix.env() == :prod,
       aliases: aliases(),
@@ -17,6 +17,7 @@ defmodule Lotus.ClickHouse.MixProject do
       dialyzer: dialyzer(),
       package: package(),
       description: description(),
+      docs: docs(),
       source_url: @source_url,
       homepage_url: @source_url
     ]
@@ -37,11 +38,12 @@ defmodule Lotus.ClickHouse.MixProject do
 
   defp deps do
     [
-      {:lotus, github: "elixir-lotus/lotus", branch: "release/v1.0-prep"},
+      {:lotus, github: "elixir-lotus/lotus", branch: "main"},
       {:ecto_ch, "~> 0.3"},
       {:ecto_sqlite3, "~> 0.21", only: :test},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
-      {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false}
+      {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false},
+      {:ex_doc, "~> 0.34", only: :dev, runtime: false}
     ]
   end
 
@@ -61,13 +63,32 @@ defmodule Lotus.ClickHouse.MixProject do
     ]
   end
 
+  defp docs do
+    [
+      main: "readme",
+      source_ref: "v#{@version}",
+      extras: [
+        "README.md",
+        "guides/installation.md",
+        "guides/how-it-works.md",
+        "CHANGELOG.md"
+      ],
+      groups_for_modules: [
+        Adapter: [
+          Lotus.Source.Adapters.ClickHouse,
+          Lotus.Source.Adapters.Ecto.Dialects.ClickHouse
+        ]
+      ]
+    ]
+  end
+
   defp package do
     [
       name: "lotus_clickhouse",
       maintainers: ["Arda Can Tugay", "Rui Freitas"],
       licenses: ["MIT"],
       links: %{GitHub: @source_url},
-      files: ~w[lib .formatter.exs mix.exs README* LICENSE*]
+      files: ~w[lib guides .formatter.exs mix.exs README* CHANGELOG* LICENSE*]
     ]
   end
 

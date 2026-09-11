@@ -1,6 +1,8 @@
 defmodule Lotus.ClickHouse.Integration.IntrospectionTest do
   use Lotus.ClickHouse.Case, async: false
 
+  import Lotus.ClickHouse.Test.DenyAssertions
+
   alias Lotus.Source.Adapters.ClickHouse, as: Adapter
 
   @db_config_key :database
@@ -162,8 +164,8 @@ defmodule Lotus.ClickHouse.Integration.IntrospectionTest do
   describe "builtin_denies/1" do
     test "denies system schema tables" do
       denies = Adapter.builtin_denies(Repo)
-      assert {"system", ~r/.*/} in denies
-      assert {"INFORMATION_SCHEMA", ~r/.*/} in denies
+      assert denies_pattern?(denies, "system")
+      assert denies_pattern?(denies, "INFORMATION_SCHEMA")
     end
 
     test "denies lotus internal tables" do

@@ -1,13 +1,15 @@
 defmodule Lotus.ClickHouse.Integration.PreflightTest do
   use ExUnit.Case, async: false
 
+  import Lotus.ClickHouse.Test.DenyAssertions
+
   alias Lotus.ClickHouse.Test.Repo
   alias Lotus.Query.Statement
   alias Lotus.Source.Adapter, as: AdapterBehaviour
   alias Lotus.Source.Adapters.ClickHouse, as: Adapter
   alias Lotus.Source.Adapters.Ecto.Dialects.ClickHouse, as: Dialect
 
-  defp stmt(sql), do: %Statement{adapter: Adapter, text: sql, params: []}
+  defp stmt(sql), do: %Statement{adapter: Adapter, body: sql, params: []}
 
   @ch_adapter Adapter.wrap("clickhouse", Repo)
 
@@ -104,7 +106,7 @@ defmodule Lotus.ClickHouse.Integration.PreflightTest do
   describe "ClickHouse adapter dispatch — safety" do
     test "builtin_denies includes system tables" do
       denies = AdapterBehaviour.builtin_denies(@ch_adapter)
-      assert {"system", ~r/.*/} in denies
+      assert denies_pattern?(denies, "system")
     end
 
     test "builtin_schema_denies includes system schemas" do
