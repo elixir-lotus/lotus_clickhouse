@@ -38,7 +38,7 @@ defmodule Lotus.ClickHouse.MixProject do
 
   defp deps do
     [
-      {:lotus, github: "elixir-lotus/lotus", branch: "main"},
+      {:lotus, "~> 1.0.0-rc.1"},
       {:ecto_ch, "~> 0.3"},
       {:ecto_sqlite3, "~> 0.21", only: :test},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
