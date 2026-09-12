@@ -1,5 +1,27 @@
 defmodule Lotus.Source.Adapters.ClickHouse do
-  @moduledoc false
+  @moduledoc """
+  `Lotus.Source.Adapter` implementation for ClickHouse.
+
+  Register it in `:source_adapters` and any repo running
+  `Ecto.Adapters.ClickHouse` becomes a Lotus data source, queryable from the
+  same editor, dashboards and AI assistant as a Postgres or MySQL source:
+
+      config :lotus,
+        source_adapters: [Lotus.Source.Adapters.ClickHouse],
+        data_sources: %{"events" => MyApp.ClickHouseRepo}
+
+  The adapter itself is thin. It is built with
+  `use Lotus.Source.Adapters.Ecto`, so the Statement pipeline, preflight and
+  introspection come from Lotus core, and everything ClickHouse-specific —
+  identifier quoting, `{$0:Type}` placeholders, `EXPLAIN` plans, the type
+  mapping, the editor configuration and the AI context — lives in
+  `Lotus.Source.Adapters.Ecto.Dialects.ClickHouse`.
+
+  That split is the point of the Dialect contract: a SQL engine Lotus does
+  not ship support for needs a dialect module, not a whole adapter. See the
+  [installation guide](installation.html) to configure it and
+  [how it works](how-it-works.html) for the mechanics.
+  """
 
   use Lotus.Source.Adapters.Ecto,
     dialect: Lotus.Source.Adapters.Ecto.Dialects.ClickHouse

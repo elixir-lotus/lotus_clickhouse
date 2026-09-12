@@ -1,9 +1,25 @@
 defmodule Lotus.Source.Adapters.Ecto.Dialects.ClickHouse.EditorConfig do
-  @moduledoc false
+  @moduledoc """
+  Editor-side vocabulary for the ClickHouse dialect.
+
+  `config/0` returns the payload the dialect hands back from
+  `c:Lotus.Source.Adapters.Ecto.Dialect.editor_config/0`: the
+  `sql:clickhouse` language identifier, ClickHouse keywords and types
+  including the `Nullable` and `LowCardinality` wrappers, function
+  completions with signatures, and the clause names that act as context
+  boundaries for completion.
+
+  It carries no `:dialect_spec`, and CodeMirror ships no ClickHouse grammar,
+  so the editor tokenizes as generic SQL and draws its completions from the
+  lists here rather than from a ClickHouse parser.
+  """
 
   def config do
     %{
-      language: "sql",
+      # The `family:dialect` identifier, not a bare family: the editor reads
+      # the part after the colon to pick a tokenizer, so "sql" alone would
+      # drop every ClickHouse keyword and function declared below.
+      language: "sql:clickhouse",
       keywords: ~w(PREWHERE FINAL SAMPLE SETTINGS FORMAT ENGINE
            TTL MATERIALIZED POPULATE MODIFY ATTACH DETACH OPTIMIZE FREEZE
            SYSTEM RELOAD DICTIONARIES DICTIONARY KILL QUERY MUTATION

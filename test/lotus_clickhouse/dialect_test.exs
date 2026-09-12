@@ -276,11 +276,18 @@ defmodule Lotus.ClickHouse.DialectTest do
   end
 
   describe "editor_config/0" do
-    test "returns sql language with all required keys" do
+    test "returns all required keys" do
       config = Dialect.editor_config()
       required_keys = [:language, :keywords, :types, :functions, :context_boundaries]
       for key <- required_keys, do: assert(Map.has_key?(config, key), "missing key: #{key}")
-      assert config.language == "sql"
+    end
+
+    test "reports the same language identifier as query_language/0" do
+      # The editor reads the part after the colon to pick a tokenizer, so a
+      # bare family here silently drops every ClickHouse keyword and function
+      # the rest of this config declares.
+      assert Dialect.editor_config().language == "sql:clickhouse"
+      assert Dialect.editor_config().language == Dialect.query_language()
     end
 
     test "includes ClickHouse-specific keywords" do
@@ -344,6 +351,52 @@ defmodule Lotus.ClickHouse.DialectTest do
       assert "sample" in config.context_boundaries
       assert "settings" in config.context_boundaries
       assert "format" in config.context_boundaries
+    end
+  end
+
+  describe "apply_filters/2 placeholder typing" do
+    alias Lotus.Query.Filter
+
+    test "types each placeholder from the value that lands in it" do
+      statement = Statement.new("SELECT * FROM events", [])
+
+      filters = [
+        %Filter{column: "deleted_at", op: :is_null},
+        %Filter{column: "count", op: :eq, value: 42}
+      ]
+
+      %Statement{body: sql, params: params} = Dialect.apply_filters(statement, filters)
+
+      # A null test binds nothing, so the integer is parameter 0. Counting the
+      # null test would have typed {$0:...} from its nil value instead.
+      assert params == [42]
+      assert sql =~ "{$0:Int64}"
+      refute sql =~ "Nullable"
+    end
+
+    test "a nil-valued filter binds nothing either" do
+      statement = Statement.new("SELECT * FROM events", [])
+
+      filters = [
+        %Filter{column: "archived_at", op: :eq, value: nil},
+        %Filter{column: "name", op: :eq, value: "ada"}
+      ]
+
+      %Statement{body: sql, params: params} = Dialect.apply_filters(statement, filters)
+
+      assert params == ["ada"]
+      assert sql =~ "{$0:String}"
+    end
+
+    test "existing statement params keep their positions" do
+      statement = Statement.new("SELECT * FROM events WHERE id = {$0:Int64}", [7])
+
+      filters = [%Filter{column: "name", op: :eq, value: "ada"}]
+
+      %Statement{body: sql, params: params} = Dialect.apply_filters(statement, filters)
+
+      assert params == [7, "ada"]
+      assert sql =~ "{$1:String}"
     end
   end
 end

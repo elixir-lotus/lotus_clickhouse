@@ -1,5 +1,26 @@
 defmodule Lotus.Source.Adapters.Ecto.Dialects.ClickHouse do
-  @moduledoc false
+  @moduledoc """
+  `Lotus.Source.Adapters.Ecto.Dialect` implementation for ClickHouse.
+
+  Everything that differs from the SQL dialects Lotus ships lives here:
+
+    * **Identifiers and parameters** — double-quoted identifiers, and ClickHouse's
+      `{$0:Type}` placeholders rather than `$1` or `?`.
+    * **Type mapping** — `db_type_to_lotus_type/1` covers the integer,
+      float, decimal, date, string, array, map and tuple families, through
+      the `Nullable` and `LowCardinality` wrappers.
+    * **Query plans** — `query_plan/4` runs `EXPLAIN`.
+    * **Safety defaults** — `builtin_denies/1` and `builtin_schema_denies/1`
+      keep the `system` database and the migration table out of reach,
+      before any host visibility rule is considered.
+    * **Editor and AI** — ClickHouse keywords, types and functions, and an
+      `ai_context/0` carrying the syntax notes that keep a model away from
+      the patterns that perform badly here (`PREWHERE`, `FINAL`,
+      approximate aggregations, column-oriented shapes).
+
+  Host applications do not call this module. It is reached through
+  `Lotus.Source.Adapters.ClickHouse`, which the Lotus pipeline drives.
+  """
 
   @behaviour Lotus.Source.Adapters.Ecto.Dialect
 
@@ -95,7 +116,11 @@ defmodule Lotus.Source.Adapters.Ecto.Dialects.ClickHouse do
 
   @impl true
   def apply_filters(%Statement{body: sql, params: params} = statement, filters) do
-    filter_values = Enum.map(filters, & &1.value)
+    # A placeholder carries its own type here, so the type has to be derived
+    # from the value that will land in it. `FilterInjector` emits no parameter
+    # for a null test, so counting every filter would shift each index after
+    # the first one and type a placeholder from the wrong value.
+    filter_values = filters |> Enum.filter(&binds_parameter?/1) |> Enum.map(& &1.value)
     all_values = params ++ filter_values
 
     placeholder_fn = fn idx ->
@@ -108,6 +133,12 @@ defmodule Lotus.Source.Adapters.Ecto.Dialects.ClickHouse do
 
     %{statement | body: new_sql, params: new_params}
   end
+
+  # Mirrors the clauses in `Lotus.Source.Adapters.Ecto.SQL.FilterInjector` that
+  # build a condition without a parameter.
+  defp binds_parameter?(%{op: op}) when op in [:is_null, :is_not_null], do: false
+  defp binds_parameter?(%{value: nil}), do: false
+  defp binds_parameter?(_filter), do: true
 
   @impl true
   def apply_sorts(%Statement{body: sql} = statement, sorts) do
@@ -184,7 +215,9 @@ defmodule Lotus.Source.Adapters.Ecto.Dialects.ClickHouse do
     relations =
       case repo.query(explain_sql, params, settings: [readonly: 1]) do
         {:ok, %{rows: rows}} ->
-          extract_tables_from_ast(rows, default_db, alias_map)
+          rows
+          |> extract_tables_from_ast(default_db, alias_map)
+          |> reconcile_with_sql(sql, default_db, alias_map)
 
         {:error, _err} ->
           extract_tables_from_sql_fallback(sql, default_db, alias_map)
@@ -196,6 +229,22 @@ defmodule Lotus.Source.Adapters.Ecto.Dialects.ClickHouse do
       {:ok,
        extract_tables_from_sql_fallback(sql, default_db(repo), EctoAdapter.parse_alias_map(sql))}
   end
+
+  # An empty relation set means "this query reads nothing", and core's
+  # preflight lets it straight through. That is the right answer for
+  # `SELECT 1`, and a visibility bypass for anything else: a ClickHouse
+  # release that renames the AST node, or an identifier shape the scan does
+  # not match, would silently produce it. So when the statement plainly reads
+  # from something, fall back to the SQL scan rather than reporting nothing.
+  defp reconcile_with_sql(relations, sql, default_db, alias_map) do
+    if MapSet.size(relations) == 0 and reads_from_something?(sql) do
+      extract_tables_from_sql_fallback(sql, default_db, alias_map)
+    else
+      relations
+    end
+  end
+
+  defp reads_from_something?(sql), do: Regex.match?(~r/\b(?:FROM|JOIN)\b/i, sql)
 
   defp default_db(repo), do: repo.config()[:database] || "default"
 
@@ -284,7 +333,7 @@ defmodule Lotus.Source.Adapters.Ecto.Dialects.ClickHouse do
       name,
       type,
       position,
-      default_kind,
+      default_expression,
       is_in_primary_key
     FROM system.columns
     WHERE database = {$0:String} AND table = {$1:String}
@@ -293,12 +342,12 @@ defmodule Lotus.Source.Adapters.Ecto.Dialects.ClickHouse do
 
     %{rows: rows} = repo.query!(sql, [schema, table])
 
-    Enum.map(rows, fn [name, type, _position, default_kind, is_pk] ->
+    Enum.map(rows, fn [name, type, _position, default_expression, is_pk] ->
       %{
         name: name,
         type: format_ch_type(type),
         nullable: nullable?(type),
-        default: if(default_kind != "", do: default_kind, else: nil),
+        default: if(default_expression != "", do: default_expression, else: nil),
         primary_key: is_pk == 1
       }
     end)
@@ -486,8 +535,17 @@ defmodule Lotus.Source.Adapters.Ecto.Dialects.ClickHouse do
   defp lotus_type_to_ch_param(:uuid), do: "String"
   defp lotus_type_to_ch_param(:binary), do: "String"
   defp lotus_type_to_ch_param(:json), do: "String"
+  # `supports_feature?(:arrays)` says a list can bind as one value, so the
+  # element type has to survive into the placeholder. Core expands lists into
+  # one placeholder each today, which is why this went unnoticed.
+  defp lotus_type_to_ch_param({:array, inner}), do: "Array(#{lotus_type_to_ch_param(inner)})"
   defp lotus_type_to_ch_param(nil), do: "String"
   defp lotus_type_to_ch_param(_), do: "String"
+
+  defp ch_type_for_value([]), do: "Array(String)"
+
+  defp ch_type_for_value([head | _] = list) when is_list(list),
+    do: "Array(#{ch_type_for_value(head)})"
 
   defp ch_type_for_value(v) when is_binary(v), do: "String"
   defp ch_type_for_value(v) when is_integer(v), do: "Int64"
