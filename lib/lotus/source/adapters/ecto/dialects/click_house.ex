@@ -116,10 +116,6 @@ defmodule Lotus.Source.Adapters.Ecto.Dialects.ClickHouse do
 
   @impl true
   def apply_filters(%Statement{body: sql, params: params} = statement, filters) do
-    # A placeholder carries its own type here, so the type has to be derived
-    # from the value that will land in it. `FilterInjector` emits no parameter
-    # for a null test, so counting every filter would shift each index after
-    # the first one and type a placeholder from the wrong value.
     filter_values = filters |> Enum.filter(&binds_parameter?/1) |> Enum.map(& &1.value)
     all_values = params ++ filter_values
 
@@ -134,8 +130,6 @@ defmodule Lotus.Source.Adapters.Ecto.Dialects.ClickHouse do
     %{statement | body: new_sql, params: new_params}
   end
 
-  # Mirrors the clauses in `Lotus.Source.Adapters.Ecto.SQL.FilterInjector` that
-  # build a condition without a parameter.
   defp binds_parameter?(%{op: op}) when op in [:is_null, :is_not_null], do: false
   defp binds_parameter?(%{value: nil}), do: false
   defp binds_parameter?(_filter), do: true
@@ -230,12 +224,8 @@ defmodule Lotus.Source.Adapters.Ecto.Dialects.ClickHouse do
        extract_tables_from_sql_fallback(sql, default_db(repo), EctoAdapter.parse_alias_map(sql))}
   end
 
-  # An empty relation set means "this query reads nothing", and core's
-  # preflight lets it straight through. That is the right answer for
-  # `SELECT 1`, and a visibility bypass for anything else: a ClickHouse
-  # release that renames the AST node, or an identifier shape the scan does
-  # not match, would silently produce it. So when the statement plainly reads
-  # from something, fall back to the SQL scan rather than reporting nothing.
+  # Preflight waves through an empty relation set. Right for `SELECT 1`, a
+  # visibility bypass for anything the AST scan simply failed to match.
   defp reconcile_with_sql(relations, sql, default_db, alias_map) do
     if MapSet.size(relations) == 0 and reads_from_something?(sql) do
       extract_tables_from_sql_fallback(sql, default_db, alias_map)
@@ -535,9 +525,8 @@ defmodule Lotus.Source.Adapters.Ecto.Dialects.ClickHouse do
   defp lotus_type_to_ch_param(:uuid), do: "String"
   defp lotus_type_to_ch_param(:binary), do: "String"
   defp lotus_type_to_ch_param(:json), do: "String"
-  # `supports_feature?(:arrays)` says a list can bind as one value, so the
-  # element type has to survive into the placeholder. Core expands lists into
-  # one placeholder each today, which is why this went unnoticed.
+  # Unreached while core expands lists into one placeholder each, but
+  # `supports_feature?(:arrays)` promises a list can bind as one value.
   defp lotus_type_to_ch_param({:array, inner}), do: "Array(#{lotus_type_to_ch_param(inner)})"
   defp lotus_type_to_ch_param(nil), do: "String"
   defp lotus_type_to_ch_param(_), do: "String"

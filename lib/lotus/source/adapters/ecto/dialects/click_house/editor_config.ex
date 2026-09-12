@@ -16,9 +16,6 @@ defmodule Lotus.Source.Adapters.Ecto.Dialects.ClickHouse.EditorConfig do
 
   def config do
     %{
-      # The `family:dialect` identifier, not a bare family: the editor reads
-      # the part after the colon to pick a tokenizer, so "sql" alone would
-      # drop every ClickHouse keyword and function declared below.
       language: "sql:clickhouse",
       keywords: ~w(PREWHERE FINAL SAMPLE SETTINGS FORMAT ENGINE
            TTL MATERIALIZED POPULATE MODIFY ATTACH DETACH OPTIMIZE FREEZE
