@@ -2,7 +2,7 @@ defmodule Lotus.ClickHouse.MixProject do
   use Mix.Project
 
   @source_url "https://github.com/elixir-lotus/lotus_clickhouse"
-  @version "1.0.0"
+  @version "0.1.0"
 
   def project do
     [
@@ -38,7 +38,7 @@ defmodule Lotus.ClickHouse.MixProject do
 
   defp deps do
     [
-      {:lotus, "~> 1.0.0-rc.1"},
+      {:lotus, "~> 1.0"},
       {:ecto_ch, "~> 0.3"},
       {:ecto_sqlite3, "~> 0.21", only: :test},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
@@ -70,13 +70,15 @@ defmodule Lotus.ClickHouse.MixProject do
       extras: [
         "README.md",
         "guides/installation.md",
+        "guides/writing-queries.md",
         "guides/how-it-works.md",
         "CHANGELOG.md"
       ],
       groups_for_modules: [
         Adapter: [
           Lotus.Source.Adapters.ClickHouse,
-          Lotus.Source.Adapters.Ecto.Dialects.ClickHouse
+          Lotus.Source.Adapters.Ecto.Dialects.ClickHouse,
+          Lotus.Source.Adapters.Ecto.Dialects.ClickHouse.EditorConfig
         ]
       ]
     ]
