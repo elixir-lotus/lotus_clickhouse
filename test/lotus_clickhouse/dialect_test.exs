@@ -283,9 +283,6 @@ defmodule Lotus.ClickHouse.DialectTest do
     end
 
     test "reports the same language identifier as query_language/0" do
-      # The editor reads the part after the colon to pick a tokenizer, so a
-      # bare family here silently drops every ClickHouse keyword and function
-      # the rest of this config declares.
       assert Dialect.editor_config().language == "sql:clickhouse"
       assert Dialect.editor_config().language == Dialect.query_language()
     end

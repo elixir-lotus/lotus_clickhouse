@@ -525,8 +525,6 @@ defmodule Lotus.Source.Adapters.Ecto.Dialects.ClickHouse do
   defp lotus_type_to_ch_param(:uuid), do: "String"
   defp lotus_type_to_ch_param(:binary), do: "String"
   defp lotus_type_to_ch_param(:json), do: "String"
-  # Unreached while core expands lists into one placeholder each, but
-  # `supports_feature?(:arrays)` promises a list can bind as one value.
   defp lotus_type_to_ch_param({:array, inner}), do: "Array(#{lotus_type_to_ch_param(inner)})"
   defp lotus_type_to_ch_param(nil), do: "String"
   defp lotus_type_to_ch_param(_), do: "String"
