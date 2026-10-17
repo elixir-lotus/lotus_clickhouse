@@ -39,7 +39,7 @@ defmodule Lotus.ClickHouse.MixProject do
   defp deps do
     [
       # table_row_estimates/2 and the :comment column key are not in a Lotus
-      # release yet: they come with elixir-lotus/lotus#320. Point at main once it
+      # release yet: they come with elixir-lotus/lotus#324. Point at main once it
       # merges, then back to "~> 1.3" once Lotus releases it.
       {:lotus, github: "elixir-lotus/lotus", branch: "claude/epic-ride-pku8a3"},
       {:ecto_ch, "~> 0.3"},
