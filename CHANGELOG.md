@@ -5,7 +5,11 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.2.0] - 2026-10-17
+
+The adapter reports column comments and table row estimates, which Lotus 1.3's
+AI assistant and MCP server show, and moves to the `Lotus.SQL` helpers.
+Requires Lotus `~> 1.3`.
 
 ### Added
 
@@ -20,9 +24,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- Requires the Lotus that adds `table_row_estimates/2` and the `:comment`
-  column key (elixir-lotus/lotus#324). Until it is released, the dependency
-  points at Lotus `main` on GitHub.
+- Requires Lotus `~> 1.3`, which adds `table_row_estimates/2` and the
+  `:comment` column key (elixir-lotus/lotus#324).
 - The dialect uses `Lotus.SQL.FilterInjector`, `Lotus.SQL.SortInjector` and
   `Lotus.SQL.Transformer`, which replace the deprecated
   `Lotus.Source.Adapters.Ecto.SQL.*` modules since Lotus 1.2.
