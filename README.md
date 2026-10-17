@@ -13,8 +13,8 @@ Add both `lotus` and `lotus_clickhouse` to your `mix.exs`:
 ```elixir
 def deps do
   [
-    {:lotus, "~> 1.0"},
-    {:lotus_clickhouse, "~> 0.1"}
+    {:lotus, "~> 1.3"},
+    {:lotus_clickhouse, "~> 0.2"}
   ]
 end
 ```

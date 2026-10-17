@@ -2,7 +2,7 @@ defmodule Lotus.ClickHouse.MixProject do
   use Mix.Project
 
   @source_url "https://github.com/elixir-lotus/lotus_clickhouse"
-  @version "0.1.0"
+  @version "0.2.0"
 
   def project do
     [
@@ -38,9 +38,7 @@ defmodule Lotus.ClickHouse.MixProject do
 
   defp deps do
     [
-      # Lotus main has table_row_estimates/2 (elixir-lotus/lotus#324): back to
-      # "~> 1.3" once Lotus releases it.
-      {:lotus, github: "elixir-lotus/lotus", branch: "main"},
+      {:lotus, "~> 1.3"},
       {:ecto_ch, "~> 0.3"},
       {:ecto_sqlite3, "~> 0.21", only: :test},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
