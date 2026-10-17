@@ -7,7 +7,7 @@ defmodule Lotus.ClickHouse.Test.Migrations do
   CREATE TABLE IF NOT EXISTS test_users (
     id UInt64,
     name String,
-    email String,
+    email String COMMENT 'Login address, unique',
     age Nullable(UInt32),
     active UInt8 DEFAULT 1,
     metadata String DEFAULT '{}',
