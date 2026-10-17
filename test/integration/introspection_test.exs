@@ -133,6 +133,26 @@ defmodule Lotus.ClickHouse.Integration.IntrospectionTest do
     end
   end
 
+  describe "comments and row estimates" do
+    test "a column's comment" do
+      {:ok, columns} = Adapter.describe_table(Repo, test_database(), "test_users")
+      by_name = Map.new(columns, &{&1.name, &1})
+
+      assert by_name["email"].comment == "Login address, unique"
+      assert by_name["name"].comment == nil
+      refute Map.has_key?(by_name["email"], :references)
+    end
+
+    test "row estimates from system.tables, for MergeTree tables" do
+      db = test_database()
+      {:ok, estimates} = Adapter.table_row_estimates(Repo, [db])
+
+      assert is_integer(estimates[{db, "test_users"}])
+      assert is_integer(estimates[{db, "test_events"}])
+      assert {:ok, %{}} = Adapter.table_row_estimates(Repo, ["nonexistent_db_xyz"])
+    end
+  end
+
   describe "resolve_table_namespace/3" do
     test "resolves existing table to its database" do
       db = test_database()

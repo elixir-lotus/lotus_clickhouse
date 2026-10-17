@@ -27,9 +27,9 @@ defmodule Lotus.Source.Adapters.Ecto.Dialects.ClickHouse do
   alias Lotus.Query.Statement
   alias Lotus.Source.Adapters.Ecto, as: EctoAdapter
   alias Lotus.Source.Adapters.Ecto.Dialects.ClickHouse.EditorConfig
-  alias Lotus.Source.Adapters.Ecto.SQL.FilterInjector
-  alias Lotus.Source.Adapters.Ecto.SQL.SortInjector
-  alias Lotus.Source.Adapters.Ecto.SQL.Transformer
+  alias Lotus.SQL.FilterInjector
+  alias Lotus.SQL.SortInjector
+  alias Lotus.SQL.Transformer
 
   @ch_error Module.concat([:Ch, :Error])
 
@@ -324,7 +324,8 @@ defmodule Lotus.Source.Adapters.Ecto.Dialects.ClickHouse do
       type,
       position,
       default_expression,
-      is_in_primary_key
+      is_in_primary_key,
+      comment
     FROM system.columns
     WHERE database = {$0:String} AND table = {$1:String}
     ORDER BY position
@@ -332,15 +333,40 @@ defmodule Lotus.Source.Adapters.Ecto.Dialects.ClickHouse do
 
     %{rows: rows} = repo.query!(sql, [schema, table])
 
-    Enum.map(rows, fn [name, type, _position, default_expression, is_pk] ->
+    # ClickHouse has no foreign keys, so no column carries :references.
+    Enum.map(rows, fn [name, type, _position, default_expression, is_pk, comment] ->
       %{
         name: name,
         type: format_ch_type(type),
         nullable: nullable?(type),
         default: if(default_expression != "", do: default_expression, else: nil),
-        primary_key: is_pk == 1
+        primary_key: is_pk == 1,
+        comment: if(comment in [nil, ""], do: nil, else: comment)
       }
     end)
+  end
+
+  @impl true
+  def table_row_estimates(_repo, []), do: %{}
+
+  def table_row_estimates(repo, schemas) do
+    # total_rows is what the engine keeps for MergeTree and the other
+    # engines that know their size (exact for them, no scan), and NULL for
+    # those that don't (views, Merge, Distributed): those are left out.
+    placeholders =
+      schemas
+      |> Enum.with_index()
+      |> Enum.map_join(",", fn {_s, i} -> "{$#{i}:String}" end)
+
+    sql = """
+    SELECT database, name, total_rows
+    FROM system.tables
+    WHERE database IN (#{placeholders}) AND total_rows IS NOT NULL
+    """
+
+    %{rows: rows} = repo.query!(sql, schemas)
+
+    for [schema, table, rows] <- rows, is_integer(rows), into: %{}, do: {{schema, table}, rows}
   end
 
   @impl true
