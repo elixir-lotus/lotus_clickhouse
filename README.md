@@ -121,9 +121,9 @@ mix credo --strict
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md): when a change needs an issue
+See [CONTRIBUTING.md](https://github.com/elixir-lotus/lotus_clickhouse/blob/main/CONTRIBUTING.md): when a change needs an issue
 first, and what a pull request needs. Report a security problem
-privately, as [SECURITY.md](SECURITY.md) says.
+privately, as [SECURITY.md](https://github.com/elixir-lotus/lotus_clickhouse/blob/main/SECURITY.md) says.
 
 ## License
 
