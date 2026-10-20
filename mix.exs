@@ -72,7 +72,9 @@ defmodule Lotus.ClickHouse.MixProject do
         "guides/installation.md",
         "guides/writing-queries.md",
         "guides/how-it-works.md",
-        "CHANGELOG.md"
+        "CHANGELOG.md",
+        "CONTRIBUTING.md",
+        "SECURITY.md"
       ],
       groups_for_modules: [
         Adapter: [

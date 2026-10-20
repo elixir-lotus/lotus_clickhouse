@@ -119,6 +119,12 @@ mix credo --strict
 - [Writing Queries](guides/writing-queries.md) — placeholders, variables, what the pipeline wraps around your SQL, and the ClickHouse-specific pitfalls.
 - [How It Works](guides/how-it-works.md) — the adapter/dialect split and every callback, for anyone reading or extending the code.
 
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md): when a change needs an issue
+first, and what a pull request needs. Report a security problem
+privately, as [SECURITY.md](SECURITY.md) says.
+
 ## License
 
 MIT — see [LICENSE](https://github.com/elixir-lotus/lotus_clickhouse/blob/main/LICENSE).
