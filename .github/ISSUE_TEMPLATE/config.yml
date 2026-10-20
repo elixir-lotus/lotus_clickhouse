@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Report a security vulnerability
+    url: https://github.com/elixir-lotus/lotus_clickhouse/security/advisories/new
+    about: Report a security problem privately, not in a public issue.
+  - name: Documentation
+    url: https://hexdocs.pm/lotus_clickhouse
+    about: Installation, writing ClickHouse queries for Lotus, and how the adapter works.
+  - name: A problem with Lotus itself
+    url: https://github.com/elixir-lotus/lotus/issues
+    about: A bug that shows up with every source, not only ClickHouse, belongs in the Lotus repository.
