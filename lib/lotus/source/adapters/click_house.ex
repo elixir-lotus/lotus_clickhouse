@@ -25,9 +25,9 @@ defmodule Lotus.Source.Adapters.ClickHouse do
 
   use Lotus.Source.Adapters.Ecto,
     dialect: Lotus.Source.Adapters.Ecto.Dialects.ClickHouse,
-    # Lotus v2: the form that connects a ClickHouse source from settings
-    # (`Lotus.Source.Connections`). Lotus v1 ignores the option. Ch connects
-    # over HTTP without logging in, so a test also runs a query.
+    # The form that connects a ClickHouse source from settings
+    # (`Lotus.Source.Connections`). Ch connects over HTTP without logging
+    # in, so a test also runs a query.
     connection: [
       kind: "clickhouse",
       label: "ClickHouse",
@@ -50,13 +50,11 @@ defmodule Lotus.Source.Adapters.ClickHouse do
 
   alias Lotus.Source.Adapters.Ecto.Dialects.ClickHouse, as: Dialect
 
-  if Code.ensure_loaded?(Lotus.Source.Adapter.Connection) do
-    # Ch takes the scheme rather than an SSL flag.
-    @impl Lotus.Source.Adapter.Connection
-    def from_settings(name, settings) do
-      {ssl, settings} = Keyword.pop(settings, :ssl, false)
-      super(name, Keyword.put(settings, :scheme, if(ssl, do: "https", else: "http")))
-    end
+  # Ch takes the scheme rather than an SSL flag.
+  @impl Lotus.Source.Adapter.Connection
+  def from_settings(name, settings) do
+    {ssl, settings} = Keyword.pop(settings, :ssl, false)
+    super(name, Keyword.put(settings, :scheme, if(ssl, do: "https", else: "http")))
   end
 
   # ClickHouse has no transaction support (ecto_ch does not implement
