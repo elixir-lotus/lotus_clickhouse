@@ -5,6 +5,17 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **A form that connects a ClickHouse source from the app.** With Lotus v2,
+  `Lotus.Source.Connections.kinds/0` lists `"clickhouse"` with its fields
+  (host, port, database, user, password, HTTPS), so a host or Lotus Pro can
+  let people connect a ClickHouse server without a repo in the config. A
+  test logs in with a query, since Ch connects over HTTP without
+  authenticating. Lotus v1 ignores it.
+
 ## [0.2.0] - 2026-10-17
 
 The adapter reports column comments and table row estimates, which Lotus 1.3's
