@@ -14,7 +14,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (host, port, database, user, password, HTTPS), so a host or Lotus Pro can
   let people connect a ClickHouse server without a repo in the config. A
   test logs in with a query, since Ch connects over HTTP without
-  authenticating. Lotus v1 ignores it.
+  authenticating.
+
+### Changed
+
+- **Requires Lotus v2.** The adapter now builds against Lotus core `main`
+  (v2) and drops the Lotus v1 compatibility guard; stay on 0.2.0 for
+  Lotus 1.3.
+
+### Fixed
+
+- **`{{var}}` templates follow ClickHouse's lexical rules.** The editor
+  config declares a `:dialect_spec` (double-quote and backtick identifiers,
+  backslash escapes in strings, `#` comments, `$$` strings), and
+  `transform_statement/1` tokenizes with the profile Lotus v2 derives from
+  it. Lotus v2's ANSI fallback ended a string at `\'`, so in
+  `WHERE name = 'O\'Brien' AND email = '{{email}}'` the variable was read
+  as part of a literal and left quoted; a variable inside a `#` comment or
+  a backtick identifier was rewritten as code.
 
 ## [0.2.0] - 2026-10-17
 

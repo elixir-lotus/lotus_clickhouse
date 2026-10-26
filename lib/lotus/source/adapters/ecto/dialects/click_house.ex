@@ -25,6 +25,7 @@ defmodule Lotus.Source.Adapters.Ecto.Dialects.ClickHouse do
   @behaviour Lotus.Source.Adapters.Ecto.Dialect
 
   alias Lotus.Query.Statement
+  alias Lotus.Query.Tokenizer.Profile
   alias Lotus.Source.Adapters.Ecto, as: EctoAdapter
   alias Lotus.Source.Adapters.Ecto.Dialects.ClickHouse.EditorConfig
   alias Lotus.SQL.FilterInjector
@@ -414,12 +415,23 @@ defmodule Lotus.Source.Adapters.Ecto.Dialects.ClickHouse do
 
   @impl true
   def transform_statement(%Statement{body: sql} = statement) do
+    profile = lexical_profile()
+
     new_sql =
       sql
-      |> Transformer.transform_wildcards(:pipe)
-      |> Transformer.strip_quoted_variables()
+      |> Transformer.transform_wildcards(:pipe, profile)
+      |> Transformer.strip_quoted_variables(profile)
 
     %{statement | body: new_sql}
+  end
+
+  # The profile Lotus core derives for this adapter
+  # (`Lotus.Source.Adapter.lexical_profile/1`): ANSI SQL refined by the
+  # editor config's dialect_spec.
+  defp lexical_profile do
+    query_language()
+    |> Profile.for_language()
+    |> Profile.from_dialect_spec(EditorConfig.dialect_spec())
   end
 
   @impl true

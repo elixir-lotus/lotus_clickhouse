@@ -9,14 +9,34 @@ defmodule Lotus.Source.Adapters.Ecto.Dialects.ClickHouse.EditorConfig do
   completions with signatures, and the clause names that act as context
   boundaries for completion.
 
-  It carries no `:dialect_spec`, and CodeMirror ships no ClickHouse grammar,
-  so the editor tokenizes as generic SQL and draws its completions from the
-  lists here rather than from a ClickHouse parser.
+  CodeMirror ships no ClickHouse grammar, so the editor draws its
+  completions from the lists here rather than from a ClickHouse parser. The
+  `:dialect_spec` (see `dialect_spec/0`) gives it ClickHouse's lexical rules,
+  and Lotus core reads the same spec to tokenize statements on the server.
   """
+
+  @doc """
+  ClickHouse's lexical rules, as a `t:Lotus.Source.Adapter.dialect_spec/0`.
+
+  Identifiers are quoted with double quotes or backticks, string literals
+  take backslash escapes (`'O\\'Brien'`), `#` starts a line comment and
+  `$$...$$` is a string. Lotus core refines the ANSI SQL profile with it
+  (`Lotus.Source.Adapter.lexical_profile/1`), so `{{var}}` and `[[...]]`
+  inside a ClickHouse comment, literal or quoted identifier are left alone.
+  """
+  def dialect_spec do
+    %{
+      identifier_quotes: "\"`",
+      hash_comments: true,
+      backslash_escapes: true,
+      double_dollar_quoted_strings: true
+    }
+  end
 
   def config do
     %{
       language: "sql:clickhouse",
+      dialect_spec: dialect_spec(),
       keywords: ~w(PREWHERE FINAL SAMPLE SETTINGS FORMAT ENGINE
            TTL MATERIALIZED POPULATE MODIFY ATTACH DETACH OPTIMIZE FREEZE
            SYSTEM RELOAD DICTIONARIES DICTIONARY KILL QUERY MUTATION
