@@ -3,7 +3,10 @@ defmodule Lotus.ClickHouse.DialectTest do
 
   import Lotus.ClickHouse.Test.DenyAssertions
 
+  alias Lotus.ClickHouse.Test.Repo
   alias Lotus.Query.Statement
+  alias Lotus.Source.Adapter
+  alias Lotus.Source.Adapters.ClickHouse
   alias Lotus.Source.Adapters.Ecto.Dialects.ClickHouse, as: Dialect
 
   describe "source identity" do
@@ -273,6 +276,26 @@ defmodule Lotus.ClickHouse.DialectTest do
       sql = "SELECT 1 AS num"
       assert t(sql) == sql
     end
+
+    test "reads a backslash-escaped quote as part of the string literal" do
+      assert t(~S"SELECT * FROM users WHERE name = 'O\'Brien' AND email = '{{email}}'") ==
+               ~S"SELECT * FROM users WHERE name = 'O\'Brien' AND email = {{email}}"
+    end
+
+    test "leaves a variable inside a # comment alone" do
+      sql = "SELECT 1 # '{{email}}'"
+      assert t(sql) == sql
+    end
+
+    test "leaves a variable inside a backtick identifier alone" do
+      sql = "SELECT 1 AS `'{{email}}'`"
+      assert t(sql) == sql
+    end
+
+    test "rewrites a wildcard variable after a $$ heredoc string" do
+      sql = "SELECT $$it's$$, '%{{q}}%'"
+      assert t(sql) == "SELECT $$it's$$, '%' || {{q}} || '%'"
+    end
   end
 
   describe "editor_config/0" do
@@ -280,6 +303,23 @@ defmodule Lotus.ClickHouse.DialectTest do
       config = Dialect.editor_config()
       required_keys = [:language, :keywords, :types, :functions, :context_boundaries]
       for key <- required_keys, do: assert(Map.has_key?(config, key), "missing key: #{key}")
+    end
+
+    test "declares ClickHouse's lexical rules as a dialect_spec" do
+      assert Dialect.editor_config().dialect_spec == %{
+               identifier_quotes: "\"`",
+               hash_comments: true,
+               backslash_escapes: true,
+               double_dollar_quoted_strings: true
+             }
+    end
+
+    test "core derives a ClickHouse lexical profile for the adapter" do
+      profile = "ch" |> ClickHouse.wrap(Repo) |> Adapter.lexical_profile()
+
+      assert profile.backslash_escapes?
+      assert "#" in profile.line_comments
+      assert "`" in profile.identifier_quotes
     end
 
     test "reports the same language identifier as query_language/0" do

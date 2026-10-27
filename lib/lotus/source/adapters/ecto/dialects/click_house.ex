@@ -24,10 +24,14 @@ defmodule Lotus.Source.Adapters.Ecto.Dialects.ClickHouse do
 
   @behaviour Lotus.Source.Adapters.Ecto.Dialect
 
+  alias Lotus.Query.Filter
   alias Lotus.Query.Statement
+  alias Lotus.Query.Tokenizer.Profile
   alias Lotus.Source.Adapters.Ecto, as: EctoAdapter
   alias Lotus.Source.Adapters.Ecto.Dialects.ClickHouse.EditorConfig
   alias Lotus.SQL.FilterInjector
+  alias Lotus.SQL.Identifier
+  alias Lotus.SQL.Sanitizer
   alias Lotus.SQL.SortInjector
   alias Lotus.SQL.Transformer
 
@@ -114,8 +118,23 @@ defmodule Lotus.Source.Adapters.Ecto.Dialects.ClickHouse do
     {"{$#{limit_idx - 1}:UInt64}", "{$#{offset_idx - 1}:UInt64}"}
   end
 
+  # Every operator, the text ones included: `apply_filters/2` writes those
+  # with ClickHouse functions rather than `FilterInjector`'s
+  # `LIKE ... ESCAPE`, which ClickHouse does not parse.
+  @impl true
+  def supported_filter_operators, do: Filter.operators()
+
   @impl true
   def apply_filters(%Statement{body: sql, params: params} = statement, filters) do
+    {text_filters, other_filters} = Enum.split_with(filters, &text_filter?/1)
+
+    {sql, params} = inject_filters(sql, params, other_filters)
+    {sql, params} = inject_text_filters(sql, params, text_filters, other_filters != [])
+
+    %{statement | body: sql, params: params}
+  end
+
+  defp inject_filters(sql, params, filters) do
     filter_values = filters |> Enum.filter(&binds_parameter?/1) |> Enum.map(& &1.value)
     all_values = params ++ filter_values
 
@@ -124,11 +143,50 @@ defmodule Lotus.Source.Adapters.Ecto.Dialects.ClickHouse do
       "{$#{idx - 1}:#{ch_type_for_value(value)}}"
     end
 
-    {new_sql, new_params} =
-      FilterInjector.apply(sql, params, filters, &quote_identifier/1, placeholder_fn)
-
-    %{statement | body: new_sql, params: new_params}
+    FilterInjector.apply(sql, params, filters, &quote_identifier/1, placeholder_fn)
   end
+
+  # Text as written, without regard to case (UTF-8 aware), and with no
+  # pattern: the value is a plain string, so `%` and `_` match themselves.
+  defp inject_text_filters(sql, params, [], _wrapped?), do: {sql, params}
+
+  defp inject_text_filters(sql, params, filters, wrapped?) do
+    conditions =
+      filters
+      |> Enum.with_index(length(params))
+      |> Enum.map_join(" AND ", fn {filter, idx} -> text_condition(filter, "{$#{idx}:String}") end)
+
+    values = Enum.map(filters, &to_string(&1.value))
+
+    # FilterInjector's statement ends in its WHERE conditions, all ANDed.
+    new_sql =
+      if wrapped?,
+        do: "#{sql} AND #{conditions}",
+        else:
+          "WITH _base AS (#{Sanitizer.strip_trailing_semicolon(sql)}) SELECT * FROM _base WHERE #{conditions}"
+
+    {new_sql, params ++ values}
+  end
+
+  defp text_condition(%Filter{column: column, op: op}, placeholder) do
+    Identifier.validate_identifier!(column, "filter column")
+    text = "lowerUTF8(toString(#{quote_identifier(column)}))"
+
+    case op do
+      :contains ->
+        "positionCaseInsensitiveUTF8(toString(#{quote_identifier(column)}), #{placeholder}) > 0"
+
+      :starts_with ->
+        "startsWith(#{text}, lowerUTF8(#{placeholder}))"
+
+      :ends_with ->
+        "endsWith(#{text}, lowerUTF8(#{placeholder}))"
+    end
+  end
+
+  # A text filter without a value matches nothing, as FilterInjector has it.
+  defp text_filter?(%Filter{op: op, value: value}),
+    do: op in Filter.text_operators() and not is_nil(value)
 
   defp binds_parameter?(%{op: op}) when op in [:is_null, :is_not_null], do: false
   defp binds_parameter?(%{value: nil}), do: false
@@ -187,6 +245,66 @@ defmodule Lotus.Source.Adapters.Ecto.Dialects.ClickHouse do
     else
       base_denies
     end
+  end
+
+  # Functions that read files, reach the network or other servers, or read a
+  # table, dictionary or schema named by a string, where preflight's
+  # EXPLAIN AST scan sees no table and visibility rules cannot apply.
+  # `readonly=1` refuses most table functions (they need a temporary table),
+  # but not the scalar `file()`, `mergeTreeIndex`, `dictGet` or
+  # `hasColumnInTable`, and a host may run a source with writes allowed.
+  # Names are matched without regard to case, quoted or not.
+  @impl true
+  def denied_functions do
+    [
+      # Files, object stores, HDFS and data lakes
+      "file",
+      "filecluster",
+      "s3",
+      "s3cluster",
+      "gcs",
+      "cosn",
+      "oss",
+      "azureblobstorage*",
+      "hdfs",
+      "hdfscluster",
+      "hive",
+      "deltalake*",
+      "iceberg*",
+      "hudi*",
+      # The network, other servers and other databases
+      "url",
+      "urlcluster",
+      "remote",
+      "remotesecure",
+      "cluster",
+      "clusterallreplicas",
+      "mysql",
+      "postgresql",
+      "mongodb",
+      "redis",
+      "sqlite",
+      "jdbc",
+      "odbc",
+      # Programs, and the data an INSERT sends
+      "executable",
+      "input",
+      # A table, dictionary or schema named by a string
+      "merge",
+      "mergetreeindex",
+      "loop",
+      "timeseries*",
+      "dictionary",
+      "dictget*",
+      "dicthas",
+      "dictisin",
+      "joinget*",
+      "hascolumnintable",
+      # A model file on the server, and holding a connection
+      "catboostevaluate",
+      "sleep",
+      "sleepeachrow"
+    ]
   end
 
   @impl true
@@ -414,12 +532,23 @@ defmodule Lotus.Source.Adapters.Ecto.Dialects.ClickHouse do
 
   @impl true
   def transform_statement(%Statement{body: sql} = statement) do
+    profile = lexical_profile()
+
     new_sql =
       sql
-      |> Transformer.transform_wildcards(:pipe)
-      |> Transformer.strip_quoted_variables()
+      |> Transformer.transform_wildcards(:pipe, profile)
+      |> Transformer.strip_quoted_variables(profile)
 
     %{statement | body: new_sql}
+  end
+
+  # The profile Lotus core derives for this adapter
+  # (`Lotus.Source.Adapter.lexical_profile/1`): ANSI SQL refined by the
+  # editor config's dialect_spec.
+  defp lexical_profile do
+    query_language()
+    |> Profile.for_language()
+    |> Profile.from_dialect_spec(EditorConfig.dialect_spec())
   end
 
   @impl true

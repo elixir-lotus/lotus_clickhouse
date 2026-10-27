@@ -18,3 +18,9 @@ config :lotus_clickhouse, Lotus.ClickHouse.Test.LotusRepo,
 
 # Lotus core points at the SQLite repo for metadata storage
 config :lotus, storage_repo: Lotus.ClickHouse.Test.LotusRepo
+
+# The ClickHouse repo as a Lotus data source, so tests can run statements
+# through the whole pipeline (sanitize, preflight, execution).
+config :lotus,
+  source_adapters: [Lotus.Source.Adapters.ClickHouse],
+  data_sources: %{"clickhouse" => Lotus.ClickHouse.Test.Repo}

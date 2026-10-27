@@ -2,6 +2,7 @@ defmodule Lotus.ClickHouse.Integration.FilterSortTest do
   use Lotus.ClickHouse.Case, async: false
 
   alias Lotus.ClickHouse.Test.Fixtures
+  alias Lotus.Query.Filter
   alias Lotus.Query.Statement
   alias Lotus.Source.Adapter, as: AdapterStruct
   alias Lotus.Source.Adapters.ClickHouse, as: Adapter
@@ -31,7 +32,7 @@ defmodule Lotus.ClickHouse.Integration.FilterSortTest do
 
       filtered =
         Dialect.apply_filters(stmt(base_sql), [
-          %Lotus.Query.Filter{column: "active", op: :eq, value: 1}
+          %Filter{column: "active", op: :eq, value: 1}
         ])
 
       assert {:ok, result} =
@@ -50,7 +51,7 @@ defmodule Lotus.ClickHouse.Integration.FilterSortTest do
 
       filtered =
         Dialect.apply_filters(stmt(base_sql), [
-          %Lotus.Query.Filter{column: "age", op: :gt, value: 30}
+          %Filter{column: "age", op: :gt, value: 30}
         ])
 
       assert {:ok, result} =
@@ -68,7 +69,7 @@ defmodule Lotus.ClickHouse.Integration.FilterSortTest do
 
       filtered =
         Dialect.apply_filters(stmt(base_sql), [
-          %Lotus.Query.Filter{column: "name", op: :like, value: "%li%"}
+          %Filter{column: "name", op: :like, value: "%li%"}
         ])
 
       assert {:ok, result} =
@@ -85,8 +86,8 @@ defmodule Lotus.ClickHouse.Integration.FilterSortTest do
 
       filtered =
         Dialect.apply_filters(stmt(base_sql), [
-          %Lotus.Query.Filter{column: "active", op: :eq, value: 1},
-          %Lotus.Query.Filter{column: "age", op: :gte, value: 28}
+          %Filter{column: "active", op: :eq, value: 1},
+          %Filter{column: "age", op: :gte, value: 28}
         ])
 
       assert {:ok, result} =
@@ -97,6 +98,76 @@ defmodule Lotus.ClickHouse.Integration.FilterSortTest do
       assert "Diana" in names
       refute "Bob" in names
       refute "Charlie" in names
+    end
+  end
+
+  describe "text filters (contains, starts_with, ends_with)" do
+    defp names_for(filters, base_sql \\ "SELECT * FROM test_users ORDER BY name") do
+      filtered = Dialect.apply_filters(stmt(base_sql), filters)
+      assert {:ok, result} = Adapter.execute_query(Repo, filtered.body, filtered.params, [])
+      Enum.map(result.rows, fn row -> Enum.at(row, 1) end)
+    end
+
+    test "supported_filter_operators/0 lists every operator, the text ones included" do
+      assert Dialect.supported_filter_operators() == Filter.operators()
+
+      assert AdapterStruct.supported_filter_operators(Adapter.wrap("clickhouse", Repo)) ==
+               Filter.operators()
+    end
+
+    test "contains matches without regard to case" do
+      assert names_for([%Filter{column: "name", op: :contains, value: "LI"}]) ==
+               ["Alice", "Charlie"]
+    end
+
+    test "starts_with and ends_with match without regard to case" do
+      assert names_for([%Filter{column: "name", op: :starts_with, value: "d"}]) ==
+               ["Diana"]
+
+      assert names_for([%Filter{column: "email", op: :ends_with, value: "@SORT.COM"}]) ==
+               ["Alice", "Bob", "Charlie", "Diana", "Eve"]
+    end
+
+    test "% and _ in the value match themselves" do
+      Fixtures.insert_user(%{name: "50%_off", email: "promo@sort.com", age: 1, active: 1})
+      Fixtures.insert_user(%{name: "50 xoff", email: "other@sort.com", age: 1, active: 1})
+
+      assert names_for([%Filter{column: "name", op: :contains, value: "50%_"}]) ==
+               ["50%_off"]
+
+      assert names_for([%Filter{column: "name", op: :starts_with, value: "50%"}]) ==
+               ["50%_off"]
+    end
+
+    test "matches non-ASCII text without regard to case" do
+      Fixtures.insert_user(%{name: "École", email: "ecole@sort.com", age: 1, active: 1})
+
+      assert names_for([%Filter{column: "name", op: :contains, value: "écO"}]) ==
+               ["École"]
+    end
+
+    test "a text filter on a number column matches its text" do
+      assert names_for([%Filter{column: "age", op: :starts_with, value: "3"}]) ==
+               ["Alice", "Charlie", "Eve"]
+    end
+
+    test "combines with other filters and with the statement's own parameters" do
+      base_sql = "SELECT * FROM test_users WHERE age > {$0:Int64} ORDER BY name"
+
+      filtered =
+        Dialect.apply_filters(stmt(base_sql, [26]), [
+          %Filter{column: "name", op: :contains, value: "a"},
+          %Filter{column: "active", op: :eq, value: 1},
+          %Filter{column: "email", op: :ends_with, value: ".com"}
+        ])
+
+      assert filtered.params == [26, 1, "a", ".com"]
+      assert {:ok, result} = Adapter.execute_query(Repo, filtered.body, filtered.params, [])
+      assert Enum.map(result.rows, fn row -> Enum.at(row, 1) end) == ["Alice", "Diana"]
+    end
+
+    test "a text filter without a value matches nothing" do
+      assert names_for([%Filter{column: "name", op: :contains, value: nil}]) == []
     end
   end
 
@@ -137,7 +208,7 @@ defmodule Lotus.ClickHouse.Integration.FilterSortTest do
       paged =
         stmt(base_sql)
         |> Dialect.apply_filters([
-          %Lotus.Query.Filter{column: "active", op: :eq, value: 1}
+          %Filter{column: "active", op: :eq, value: 1}
         ])
         |> Dialect.apply_sorts([
           %Lotus.Query.Sort{column: "age", direction: :asc}
